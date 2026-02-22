@@ -1,259 +1,84 @@
 {
-  "version": "1.0",
-  "description": "ZombieVerter VCU Parameters",
-  "parameters": [
-    {
-      "id": 1,
-      "name": "Motor RPM",
-      "type": "int16",
-      "unit": "rpm",
-      "min": 0,
-      "max": 6000,
-      "decimals": 0,
-      "editable": false,
-      "category": "Motor"
-    },
-    {
-      "id": 2,
-      "name": "Power",
-      "type": "int16",
-      "unit": "kW",
-      "min": -50,
-      "max": 100,
-      "decimals": 1,
-      "editable": false,
-      "category": "Power"
-    },
-    {
-      "id": 3,
-      "name": "DC Voltage",
-      "type": "int16",
-      "unit": "V",
-      "min": 0,
-      "max": 450,
-      "decimals": 0,
-      "editable": false,
-      "category": "Electrical"
-    },
-    {
-      "id": 4,
-      "name": "DC Current",
-      "type": "int16",
-      "unit": "A",
-      "min": -300,
-      "max": 300,
-      "decimals": 0,
-      "editable": false,
-      "category": "Electrical"
-    },
-    {
-      "id": 5,
-      "name": "Motor Temp",
-      "type": "int16",
-      "unit": "°C",
-      "min": 0,
-      "max": 150,
-      "decimals": 0,
-      "editable": false,
-      "category": "Temperature"
-    },
-    {
-      "id": 6,
-      "name": "Inverter Temp",
-      "type": "int16",
-      "unit": "°C",
-      "min": 0,
-      "max": 150,
-      "decimals": 0,
-      "editable": false,
-      "category": "Temperature"
-    },
-    {
-      "id": 7,
-      "name": "Battery SOC",
-      "type": "uint8",
-      "unit": "%",
-      "min": 0,
-      "max": 100,
-      "decimals": 0,
-      "editable": false,
-      "category": "Battery"
-    },
-    {
-      "id": 8,
-      "name": "Max Current",
-      "type": "int16",
-      "unit": "A",
-      "min": 50,
-      "max": 500,
-      "decimals": 0,
-      "editable": true,
-      "category": "Settings"
-    },
-    {
-      "id": 9,
-      "name": "Throttle",
-      "type": "uint16",
-      "unit": "%",
-      "min": 0,
-      "max": 100,
-      "decimals": 0,
-      "editable": false,
-      "category": "Input"
-    },
-    {
-      "id": 10,
-      "name": "Brake Pressure",
-      "type": "uint16",
-      "unit": "%",
-      "min": 0,
-      "max": 100,
-      "decimals": 0,
-      "editable": false,
-      "category": "Input"
-    },
-    {
-      "id": 11,
-      "name": "Torque Req",
-      "type": "int16",
-      "unit": "Nm",
-      "min": -300,
-      "max": 300,
-      "decimals": 0,
-      "editable": false,
-      "category": "Motor"
-    },
-    {
-      "id": 12,
-      "name": "Torque Act",
-      "type": "int16",
-      "unit": "Nm",
-      "min": -300,
-      "max": 300,
-      "decimals": 0,
-      "editable": false,
-      "category": "Motor"
-    },
-    {
-      "id": 13,
-      "name": "Vehicle Speed",
-      "type": "uint16",
-      "unit": "km/h",
-      "min": 0,
-      "max": 200,
-      "decimals": 0,
-      "editable": false,
-      "category": "Vehicle"
-    },
-    {
-      "id": 14,
-      "name": "Coolant Temp",
-      "type": "int16",
-      "unit": "°C",
-      "min": 0,
-      "max": 120,
-      "decimals": 0,
-      "editable": false,
-      "category": "Temperature"
-    },
-    {
-      "id": 15,
-      "name": "Efficiency",
-      "type": "uint8",
-      "unit": "%",
-      "min": 0,
-      "max": 100,
-      "decimals": 0,
-      "editable": false,
-      "category": "Power"
-    },
-    {
-      "id": 20,
-      "name": "Max Cell Voltage",
-      "type": "uint16",
-      "unit": "mV",
-      "min": 2500,
-      "max": 4200,
-      "decimals": 0,
-      "editable": false,
-      "category": "BMS"
-    },
-    {
-      "id": 21,
-      "name": "Min Cell Voltage",
-      "type": "uint16",
-      "unit": "mV",
-      "min": 2500,
-      "max": 4200,
-      "decimals": 0,
-      "editable": false,
-      "category": "BMS"
-    },
-    {
-      "id": 22,
-      "name": "Avg Cell Voltage",
-      "type": "uint16",
-      "unit": "mV",
-      "min": 2500,
-      "max": 4200,
-      "decimals": 0,
-      "editable": false,
-      "category": "BMS"
-    },
-    {
-      "id": 23,
-      "name": "Delta Cell Voltage",
-      "type": "uint16",
-      "unit": "mV",
-      "min": 0,
-      "max": 500,
-      "decimals": 0,
-      "editable": false,
-      "category": "BMS"
-    },
-    {
-      "id": 24,
-      "name": "Max Cell Temp",
-      "type": "int16",
-      "unit": "°C",
-      "min": -20,
-      "max": 80,
-      "decimals": 0,
-      "editable": false,
-      "category": "BMS"
-    },
-    {
-      "id": 27,
-      "name": "Gear",
-      "type": "uint8",
-      "unit": "",
-      "min": 0,
-      "max": 3,
-      "decimals": 0,
-      "editable": true,
-      "category": "Gearbox"
-    },
-    {
-      "id": 129,
-      "name": "Motor Active",
-      "type": "uint8",
-      "unit": "",
-      "min": 0,
-      "max": 3,
-      "decimals": 0,
-      "editable": true,
-      "category": "Motor"
-    },
-    {
-      "id": 61,
-      "name": "Regen Max",
-      "type": "int16",
-      "unit": "%",
-      "min": -35,
-      "max": 0,
-      "decimals": 0,
-      "editable": true,
-      "category": "Throttle"
+  "opmode": {
+    "unit": "",
+    "category": "Control",
+    "i": 1
+  },
+  "version": {
+    "unit": "",
+    "category": "System",
+    "i": 0
+  },
+  "gear": {
+    "unit": "",
+    "category": "Control",
+    "i": 27,
+    "canrx": {
+      "id": 768,
+      "position": 0,
+      "length": 8,
+      "gain": 1
     }
-  ]
+  },
+  "throtmax": {
+    "unit": "%",
+    "category": "Throttle",
+    "i": 25,
+    "minimum": 0,
+    "maximum": 100,
+    "default": 100
+  },
+  "idcmax": {
+    "unit": "A",
+    "category": "Motor",
+    "i": 21,
+    "minimum": 0,
+    "maximum": 1000,
+    "default": 500
+  },
+  "udcmin": {
+    "unit": "V",
+    "category": "Power",
+    "i": 22
+  },
+  "udcmax": {
+    "unit": "V",
+    "category": "Power",
+    "i": 23
+  },
+  "udcsw": {
+    "unit": "V",
+    "category": "Power",
+    "i": 11
+  },
+  "speed": {
+    "unit": "rpm",
+    "category": "Status",
+    "i": 2
+  },
+  "udc": {
+    "unit": "V",
+    "category": "Status",
+    "i": 3
+  },
+  "tmphs": {
+    "unit": "°C",
+    "category": "Status",
+    "i": 7
+  },
+  "tmpm": {
+    "unit": "°C",
+    "category": "Status",
+    "i": 8
+  },
+  "din_forward": {
+    "unit": "",
+    "category": "Status",
+    "i": 14
+  },
+  "din_reverse": {
+    "unit": "",
+    "category": "Status",
+    "i": 15
+  }
 }

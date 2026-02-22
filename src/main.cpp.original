@@ -1,23 +1,17 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include <esp_timer.h>
-#include <driver/twai.h>
 #include "Config.h"
 #include "Hardware.h"
 #include "CANData.h"
 #include "InputManager.h"
 #include "UIManager.h"
 #include "WiFiManager.h"
-#include "Immobilizer.h"
-#include "WebInterface.h"
 
 // Global objects
 CANDataManager canManager;
 InputManager inputManager;
 UIManager uiManager;
 WiFiManager wifiManager;
-Immobilizer immobilizer;
-WebInterface webInterface(&canManager);
 
 // State tracking
 bool systemReady = false;
@@ -25,16 +19,13 @@ bool wifiMode = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 
-// CAN heartbeat timer
-esp_timer_handle_t canHeartbeatTimer;
-
 // Sample parameters JSON (this would normally be loaded from SPIFFS)
 const char* sampleParams = R"(
 {
   "parameters": [
     {"id": 1, "name": "Speed", "type": "int16", "unit": "rpm", "min": 0, "max": 6000, "decimals": 0, "editable": false},
     {"id": 2, "name": "Power", "type": "int16", "unit": "kW", "min": 0, "max": 100, "decimals": 1, "editable": false},
-    {"id": 3, "name": "Voltage", "type": "int16", "unit": "V", "min": 0, "max": 4000, "decimals": 0, "editable": false},
+    {"id": 3, "name": "Voltage", "type": "int16", "unit": "V", "min": 0, "max": 400, "decimals": 0, "editable": false},
     {"id": 4, "name": "Current", "type": "int16", "unit": "A", "min": -200, "max": 200, "decimals": 0, "editable": false},
     {"id": 5, "name": "Motor Temp", "type": "int16", "unit": "°C", "min": 0, "max": 150, "decimals": 0, "editable": false},
     {"id": 6, "name": "Inverter Temp", "type": "int16", "unit": "°C", "min": 0, "max": 150, "decimals": 0, "editable": false},
@@ -51,71 +42,13 @@ const char* sampleParams = R"(
     {"id": 21, "name": "Min Cell Voltage", "type": "uint16", "unit": "mV", "min": 2500, "max": 4200, "decimals": 0, "editable": false, "category": "BMS"},
     {"id": 22, "name": "Avg Cell Voltage", "type": "uint16", "unit": "mV", "min": 2500, "max": 4200, "decimals": 0, "editable": false, "category": "BMS"},
     {"id": 23, "name": "Delta Cell Voltage", "type": "uint16", "unit": "mV", "min": 0, "max": 500, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 24, "name": "Avg Cell Temp", "type": "int16", "unit": "°C", "min": -20, "max": 80, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 27, "name": "Gear", "type": "uint8", "unit": "", "min": 0, "max": 3, "decimals": 0, "editable": true},
-    {"id": 61, "name": "Regen", "type": "int16", "unit": "%", "min": -35, "max": 0, "decimals": 0, "editable": true},
-    {"id": 129, "name": "Motor Active", "type": "uint8", "unit": "", "min": 0, "max": 3, "decimals": 0, "editable": true}
+    {"id": 24, "name": "Avg Cell Temp", "type": "int16", "unit": "°C", "min": -20, "max": 80, "decimals": 0, "editable": false, "category": "BMS"}
   ]
 }
 )";
 
-// CAN heartbeat callback
-void IRAM_ATTR sendCanHeartbeat(void* arg) {
-    static uint32_t debugCounter = 0;
-    
-    twai_message_t msg;
-    msg.identifier = 0x351;
-    msg.extd = 0;
-    msg.rtr = 0;
-    msg.data_length_code = 8;
-    
-    // Initialize all bytes to 0
-    for (int i = 0; i < 8; i++) {
-        msg.data[i] = 0x00;
-    }
-    
-    // CRITICAL: Only send current limit if unlocked
-    if (immobilizer.isUnlocked()) {
-        // 500A = 5000 in 0.1A units = 0x1388
-        msg.data[4] = 0x88;  // Low byte of 5000
-        msg.data[5] = 0x13;  // High byte of 5000
-        
-        // Debug every 50 messages (5 seconds)
-        if (debugCounter % 50 == 0) {
-            Serial.println("[IMMOBILIZER] UNLOCKED - Sending 500A");
-        }
-    } else {
-        // LOCKED: Explicitly set 0A limit (safety critical!)
-        msg.data[4] = 0x00;  // 0A low byte
-        msg.data[5] = 0x00;  // 0A high byte
-        
-        // Debug every 50 messages (5 seconds)
-        if (debugCounter % 50 == 0) {
-            Serial.println("[IMMOBILIZER] LOCKED - Sending 0A");
-        }
-    }
-    
-    debugCounter++;
-    twai_transmit(&msg, 0);
-}
-
 // Input callbacks
 void onEncoderRotate(int32_t delta) {
-    // IMMOBILIZER: Lock screen handling
-    if (uiManager.getCurrentScreen() == SCREEN_LOCK && !immobilizer.isUnlocked()) {
-        if (delta > 0) {
-            immobilizer.incrementDigit();
-        } else {
-            immobilizer.decrementDigit();
-        }
-        return;
-    }
-    
-    // IMMOBILIZER: Block navigation if locked
-    if (!immobilizer.isUnlocked()) {
-        return;
-    }
-    
     #if DEBUG_SERIAL
     Serial.println("========================================");
     Serial.printf("ENCODER ROTATED: delta = %d\n", delta);
@@ -132,62 +65,108 @@ void onEncoderRotate(int32_t delta) {
         #if DEBUG_SERIAL
         Serial.println("WiFi mode disabled");
         #endif
-        return;
-    }
-    
-    // Check if on editable screen
-    if (uiManager.isEditableScreen()) {
-        if (uiManager.isEditMode()) {
-            // IN EDIT MODE - adjust parameter
-            ScreenID currentScreen = uiManager.getCurrentScreen();
+    } else {
+        // Check if we're on a control screen
+        ScreenID currentScreen = uiManager.getCurrentScreen();
+        
+        #if DEBUG_SERIAL
+        Serial.printf("Checking screen type: %d\n", currentScreen);
+        Serial.printf("SCREEN_GEAR = %d\n", SCREEN_GEAR);
+        Serial.printf("SCREEN_MOTOR = %d\n", SCREEN_MOTOR);
+        Serial.printf("SCREEN_REGEN = %d\n", SCREEN_REGEN);
+        if (currentScreen == SCREEN_GEAR) {
+            Serial.println(">>> ON GEAR SCREEN - should adjust gear!");
+        } else if (currentScreen == SCREEN_MOTOR) {
+            Serial.println(">>> ON MOTOR SCREEN - should adjust motor!");
+        } else if (currentScreen == SCREEN_REGEN) {
+            Serial.println(">>> ON REGEN SCREEN - should adjust regen!");
+        } else {
+            Serial.println(">>> ON OTHER SCREEN - should switch screens");
+        }
+        #endif
+        
+        if (currentScreen == SCREEN_GEAR) {
+            // Change gear
+            CANParameter* gear = canManager.getParameter(27);
             
-            if (currentScreen == SCREEN_GEAR) {
-                CANParameter* gear = canManager.getParameter(27);
-                if (gear) {
-                    int32_t currentGear = gear->getValueAsInt();
-                    int32_t newGear = (delta > 0) ? (currentGear + 1) % 4 : (currentGear - 1 + 4) % 4;
-                    canManager.setParameter(27, newGear);
-                    #if DEBUG_SERIAL
-                    Serial.printf("Gear: %d -> %d\n", currentGear, newGear);
-                    #endif
+            #if DEBUG_SERIAL
+            Serial.printf("Looking for parameter 27 (Gear)...\n");
+            if (gear) {
+                Serial.printf(">>> FOUND parameter 27!\n");
+                Serial.printf("    Current value: %d\n", gear->getValueAsInt());
+            } else {
+                Serial.printf(">>> ERROR: Parameter 27 NOT FOUND!\n");
+                Serial.printf("    Total parameters loaded: %d\n", canManager.getParameterCount());
+            }
+            #endif
+            
+            if (gear) {
+                int32_t currentGear = gear->getValueAsInt();
+                int32_t newGear = currentGear;
+                
+                if (delta > 0) {
+                    newGear = (currentGear + 1) % 4;  // Cycle 0-3
+                } else {
+                    newGear = (currentGear - 1 + 4) % 4;  // Cycle backwards
                 }
-            } else if (currentScreen == SCREEN_MOTOR) {
-                CANParameter* motor = canManager.getParameter(129);
-                if (motor) {
-                    int32_t currentMotor = motor->getValueAsInt();
-                    int32_t newMotor = (delta > 0) ? (currentMotor + 1) % 4 : (currentMotor - 1 + 4) % 4;
-                    canManager.setParameter(129, newMotor);
-                    #if DEBUG_SERIAL
-                    Serial.printf("Motor: %d -> %d\n", currentMotor, newMotor);
-                    #endif
+                
+                #if DEBUG_SERIAL
+                Serial.println("========================================");
+                Serial.printf("GEAR CHANGE REQUESTED\n");
+                Serial.printf("Current gear: %d -> New gear: %d\n", currentGear, newGear);
+                Serial.printf("Sending SDO Write to param 27...\n");
+                Serial.println("========================================");
+                #endif
+                
+                canManager.setParameter(27, newGear);
+            }
+        } else if (currentScreen == SCREEN_MOTOR) {
+            // Change motor mode
+            CANParameter* motor = canManager.getParameter(129);
+            if (motor) {
+                int32_t currentMotor = motor->getValueAsInt();
+                int32_t newMotor = currentMotor;
+                
+                if (delta > 0) {
+                    newMotor = (currentMotor + 1) % 4;  // Cycle 0-3
+                } else {
+                    newMotor = (currentMotor - 1 + 4) % 4;  // Cycle backwards
                 }
-            } else if (currentScreen == SCREEN_REGEN) {
-                CANParameter* regen = canManager.getParameter(61);
-                if (regen) {
-                    int32_t currentRegen = regen->getValueAsInt();
-                    int32_t newRegen = currentRegen + (delta > 0 ? 1 : -1);
-                    if (newRegen > 0) newRegen = 0;
-                    if (newRegen < -35) newRegen = -35;
-                    canManager.setParameter(61, newRegen);
-                    #if DEBUG_SERIAL
-                    Serial.printf("Regen: %d -> %d\n", currentRegen, newRegen);
-                    #endif
+                
+                #if DEBUG_SERIAL
+                Serial.printf("Motor change: %d -> %d\n", currentMotor, newMotor);
+                #endif
+                
+                canManager.setParameter(129, newMotor);
+            }
+        } else if (currentScreen == SCREEN_REGEN) {
+            // Adjust regen - rotate changes by 1% increments
+            CANParameter* regen = canManager.getParameter(61);
+            if (regen) {
+                int32_t currentRegen = regen->getValueAsInt();
+                int32_t newRegen = currentRegen;
+                
+                if (delta > 0) {
+                    newRegen = currentRegen + 1;  // Increase (less negative)
+                    if (newRegen > 0) newRegen = 0;  // Max is 0
+                } else {
+                    newRegen = currentRegen - 1;  // Decrease (more negative)
+                    if (newRegen < -35) newRegen = -35;  // Min is -35
                 }
+                
+                #if DEBUG_SERIAL
+                Serial.printf("Regen change: %d -> %d\n", currentRegen, newRegen);
+                #endif
+                
+                canManager.setParameter(61, newRegen);
             }
         } else {
-            // NOT in edit mode - navigate screens
+            // Normal screen navigation
             if (delta > 0) {
                 uiManager.setScreen(uiManager.getNextScreen());
             } else {
                 uiManager.setScreen(uiManager.getPreviousScreen());
             }
-        }
-    } else {
-        // Not editable screen - navigate
-        if (delta > 0) {
-            uiManager.setScreen(uiManager.getNextScreen());
-        } else {
-            uiManager.setScreen(uiManager.getPreviousScreen());
         }
     }
 }
@@ -195,32 +174,12 @@ void onEncoderRotate(int32_t delta) {
 void onButtonClick() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
     
-    // IMMOBILIZER: Lock screen PIN entry
-    if (currentScreen == SCREEN_LOCK && !immobilizer.isUnlocked()) {
-        immobilizer.enterDigit(immobilizer.getCurrentDigit());
-        if (immobilizer.isUnlocked()) {
-            Serial.println(">>> UNLOCKED <<<");
-            uiManager.setScreen(SCREEN_DASHBOARD);
-        }
-        return;
-    }
-    
-    // IMMOBILIZER: Block button if locked
-    if (!immobilizer.isUnlocked()) {
-        return;
-    }
-    
-    // On editable screens - toggle edit mode
-    if (uiManager.isEditableScreen()) {
-        uiManager.toggleEditMode();
+    // If on a control screen (GEAR, MOTOR, REGEN), click exits to next screen
+    if (currentScreen == SCREEN_GEAR || currentScreen == SCREEN_MOTOR || currentScreen == SCREEN_REGEN) {
+        uiManager.setScreen(uiManager.getNextScreen());
         #if DEBUG_SERIAL
-        Serial.printf("Edit mode toggled: %s\n", uiManager.isEditMode() ? "ON" : "OFF");
+        Serial.println("Button click - exiting control screen");
         #endif
-        
-        // If exiting edit mode, go to next screen
-        if (!uiManager.isEditMode()) {
-            uiManager.setScreen(uiManager.getNextScreen());
-        }
         return;
     }
     
@@ -247,15 +206,7 @@ void onButtonClick() {
 }
 
 void onButtonDoubleClick() {
-    // Double-click toggles immobilizer lock state (for testing)
-    immobilizer.toggleLock();
-    Serial.printf(">>> IMMOBILIZER: %s (via double-click) <<<\n", 
-                  immobilizer.isUnlocked() ? "UNLOCKED" : "LOCKED");
-    
-    // If locked, go to lock screen
-    if (!immobilizer.isUnlocked()) {
-        uiManager.setScreen(SCREEN_LOCK);
-    }
+    // Reserved for future use
 }
 
 void onButtonLongPress() {
@@ -353,7 +304,7 @@ void setup() {
     #endif
     
     // Show splash screen for 2 seconds
-    uiManager.init(&canManager, &immobilizer);
+    uiManager.init(&canManager);
     
     uint32_t splashStart = millis();
     while (millis() - splashStart < 2000) {  // 2 seconds
@@ -370,26 +321,6 @@ void setup() {
     }
     #if DEBUG_SERIAL
     Serial.println("CAN initialized");
-    #endif
-    
-    // Start CAN heartbeat timer
-    const esp_timer_create_args_t timerArgs = {
-        .callback = &sendCanHeartbeat,
-        .arg = nullptr,
-        .dispatch_method = ESP_TIMER_TASK,
-        .name = "can_heartbeat",
-        .skip_unhandled_events = false
-    };
-    esp_timer_create(&timerArgs, &canHeartbeatTimer);
-    esp_timer_start_periodic(canHeartbeatTimer, 100000);
-    #if DEBUG_SERIAL
-    Serial.println("CAN heartbeat timer started (100ms)");
-    #endif
-    
-    // Initialize immobilizer
-    immobilizer.init();
-    #if DEBUG_SERIAL
-    Serial.println("Immobilizer initialized");
     #endif
     
     // Load parameters
@@ -418,22 +349,6 @@ void setup() {
     #if DEBUG_SERIAL
     Serial.println("WiFi manager initialized");
     #endif
-    
-    // Initialize WebInterface (starts in AP mode: ESP-M5DIAL)
-    if (!webInterface.init()) {
-        #if DEBUG_SERIAL
-        Serial.println("Web interface init failed!");
-        #endif
-    } else {
-        #if DEBUG_SERIAL
-        Serial.println("========================================");
-        Serial.println("Web Interface Started!");
-        Serial.printf("Access at: http://%s\n", webInterface.getIPAddress().c_str());
-        Serial.println("SSID: ESP-M5DIAL");
-        Serial.println("Compatible with OpenInverter Web UIs");
-        Serial.println("========================================");
-        #endif
-    }
     
     // WiFi is DISABLED at startup - use button to enable if needed
     #if DEBUG_SERIAL
@@ -502,15 +417,8 @@ void setup() {
     inputManager.setOnButtonLongPress(onButtonLongPress);
     inputManager.setOnTouchTap(onTouchTap);
     
-    // Set initial screen based on lock state
-    if (!immobilizer.isUnlocked()) {
-        uiManager.setScreen(SCREEN_LOCK);
-        #if DEBUG_SERIAL
-        Serial.println("System LOCKED - PIN: 1234");
-        #endif
-    } else {
-        uiManager.setScreen(SCREEN_DASHBOARD);
-    }
+    // Switch to dashboard
+    uiManager.setScreen(SCREEN_DASHBOARD);
     
     systemReady = true;
     
@@ -551,12 +459,6 @@ void loop() {
     
     // Update input
     inputManager.update();
-    
-    // Update immobilizer
-    immobilizer.update();
-    
-    // Update web interface (handles HTTP requests)
-    webInterface.update();
     
     // Update WiFi if in WiFi mode
     if (wifiMode) {

@@ -16,6 +16,8 @@ bool Hardware::init() {
     // Initialize display
     M5.Display.setRotation(0);
     M5.Display.setBrightness(currentBrightness);
+    M5.Display.setColorDepth(16);
+    M5.Display.setSwapBytes(false);
     M5.Display.fillScreen(TFT_BLACK);
     
     return true;

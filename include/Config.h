@@ -16,8 +16,8 @@
 #define SCREEN_RADIUS       120
 
 // Encoder Pins (Built-in on M5Stack Dial)
-#define ENCODER_PIN_A       40
-#define ENCODER_PIN_B       41
+#define ENCODER_PIN_A       41  // Swapped with PIN_B
+#define ENCODER_PIN_B       40  // Swapped with PIN_A
 #define ENCODER_BUTTON      42
 
 // Touch Screen (FT6336U)

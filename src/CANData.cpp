@@ -236,14 +236,14 @@ CANParameter* CANDataManager::getParameterByIndex(uint8_t index) {
 }
 
 void CANDataManager::requestParameter(uint16_t paramId) {
-    // SDO Read Request: 0x40 + param_id_low + param_id_high + 0x00 x 5
+    // SDO Read Request - Correct CANopen format with index 0x2100
     CANMessage msg;
     msg.id = 0x600 + CAN_NODE_ID;
     msg.length = 8;
     msg.data[0] = 0x40;  // SDO read request
-    msg.data[1] = paramId & 0xFF;
-    msg.data[2] = (paramId >> 8) & 0xFF;
-    msg.data[3] = 0x00;
+    msg.data[1] = 0x00;  // Index low byte (0x2100 & 0xFF)
+    msg.data[2] = 0x21;  // Index high byte (0x2100 >> 8)
+    msg.data[3] = paramId & 0xFF;  // Subindex = parameter ID
     msg.data[4] = 0x00;
     msg.data[5] = 0x00;
     msg.data[6] = 0x00;
@@ -314,19 +314,19 @@ void CANDataManager::setParameter(uint16_t paramId, int32_t value) {
             break;
             
         default:
-            // For other parameters, use SDO Write (old method)
+            // For other parameters, use SDO Write - Correct CANopen format
             msg.id = 0x600 + CAN_NODE_ID;
             msg.length = 8;
             msg.data[0] = 0x23;  // SDO write 4 bytes
-            msg.data[1] = paramId & 0xFF;
-            msg.data[2] = (paramId >> 8) & 0xFF;
-            msg.data[3] = 0x00;
+            msg.data[1] = 0x00;  // Index low byte (0x2100 & 0xFF)
+            msg.data[2] = 0x21;  // Index high byte (0x2100 >> 8)
+            msg.data[3] = paramId & 0xFF;  // Subindex = parameter ID
             msg.data[4] = value & 0xFF;
             msg.data[5] = (value >> 8) & 0xFF;
             msg.data[6] = (value >> 16) & 0xFF;
             msg.data[7] = (value >> 24) & 0xFF;
             #if DEBUG_SERIAL
-            Serial.printf("Sending SDO write for param %d\n", paramId);
+            Serial.printf("Sending SDO write for param %d = %d\n", paramId, value);
             #endif
             break;
     }
@@ -404,7 +404,7 @@ void CANDataManager::processReceivedMessage(CANMessage& msg) {
 }
 
 void CANDataManager::handleSDOResponse(CANMessage& msg) {
-    if (msg.length < 4) {
+    if (msg.length < 8) {
         #if DEBUG_CAN
         Serial.println("  -> SDO message too short");
         #endif
@@ -412,7 +412,18 @@ void CANDataManager::handleSDOResponse(CANMessage& msg) {
     }
     
     uint8_t cmd = msg.data[0];
-    uint16_t paramId = msg.data[1] | (msg.data[2] << 8);
+    uint8_t indexLow = msg.data[1];   // Should be 0x00
+    uint8_t indexHigh = msg.data[2];  // Should be 0x21
+    uint8_t paramId = msg.data[3];    // Subindex = parameter ID
+    
+    // Validate this is a response for index 0x2100
+    uint16_t index = indexLow | (indexHigh << 8);
+    if (index != 0x2100) {
+        #if DEBUG_CAN
+        Serial.printf("  -> Wrong index 0x%04X (expected 0x2100)\n", index);
+        #endif
+        return;
+    }
     
     #if DEBUG_CAN
     Serial.print("  -> CMD=0x");
@@ -432,6 +443,7 @@ void CANDataManager::handleSDOResponse(CANMessage& msg) {
     }
     
     // SDO Read response: 0x43 or 0x4B
+    // 0x80 = Abort (skip these - parameter doesn't exist)
     if (cmd == 0x43 || cmd == 0x4B) {
         int32_t value = msg.data[4] | (msg.data[5] << 8) | 
                        (msg.data[6] << 16) | (msg.data[7] << 24);
@@ -443,6 +455,13 @@ void CANDataManager::handleSDOResponse(CANMessage& msg) {
         Serial.print(" = ");
         Serial.println(value);
         #endif
+    } else if (cmd == 0x80) {
+        #if DEBUG_CAN
+        uint32_t abortCode = msg.data[4] | (msg.data[5] << 8) | 
+                            (msg.data[6] << 16) | (msg.data[7] << 24);
+        Serial.printf("  -> SDO Abort for param %d: 0x%08X\n", paramId, abortCode);
+        #endif
+        // Don't update parameter value on abort
     } else {
         #if DEBUG_CAN
         Serial.print("  -> Unexpected SDO command: 0x");

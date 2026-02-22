@@ -1,989 +1,1252 @@
 #include "UIManager.h"
-#include "Config.h"
+#include "Immobilizer.h"  // Need full definition, not just forward declaration
+#include <M5GFX.h>
+
+// Static instance for callbacks
+UIManager* UIManager::instance = nullptr;
 
 UIManager::UIManager() 
-    : canManager(nullptr), currentScreen(SCREEN_SPLASH),
-      editing(false), editingParamIndex(0), editingValue(0),
-      lastUpdateTime(0), bmsPage(0), bmsMaxPages(1) {
+    : canManager(nullptr), immobilizer(nullptr), currentScreen(SCREEN_SPLASH), 
+      lastUpdateTime(0), buf1(nullptr), buf2(nullptr), editMode(false) {
+    instance = this;
+    
+    // Initialize screen array
+    for (int i = 0; i < SCREEN_COUNT; i++) {
+        screens[i] = nullptr;
+    }
 }
 
-bool UIManager::init(CANDataManager* canMgr) {
+UIManager::~UIManager() {
+    if (buf1) free(buf1);
+    if (buf2) free(buf2);
+}
+
+bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
     canManager = canMgr;
-    currentScreen = SCREEN_SPLASH;
-    showSplash();
+    immobilizer = immob;
+    
+    // Initialize LVGL
+    lv_init();
+    
+    // Allocate LVGL draw buffers (using PSRAM for better performance)
+    size_t buffer_size = SCREEN_WIDTH * 40; // 40 lines buffer
+    buf1 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    buf2 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    
+    if (!buf1 || !buf2) {
+        Serial.println("ERROR: Failed to allocate LVGL buffers!");
+        return false;
+    }
+    
+    lv_disp_draw_buf_init(&draw_buf, buf1, buf2, buffer_size);
+    
+    // Initialize display driver
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = SCREEN_WIDTH;
+    disp_drv.ver_res = SCREEN_HEIGHT;
+    disp_drv.flush_cb = lvgl_flush_cb;
+    disp_drv.draw_buf = &draw_buf;
+    disp_drv.user_data = this;
+    lv_disp_drv_register(&disp_drv);
+    
+    // Initialize input device driver (for encoder)
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.type = LV_INDEV_TYPE_ENCODER;
+    indev_drv.read_cb = lvgl_encoder_read_cb;
+    indev_drv.user_data = this;
+    lv_indev_drv_register(&indev_drv);
+    
+    // Apply default theme
+    lv_theme_t* theme = lv_theme_default_init(
+        lv_disp_get_default(),
+        lv_palette_main(LV_PALETTE_BLUE),
+        lv_palette_main(LV_PALETTE_CYAN),
+        true,  // Dark mode
+        &lv_font_montserrat_14
+    );
+    lv_disp_set_theme(lv_disp_get_default(), theme);
+    
+    // Create all screens
+    createSplashScreen();
+    createLockScreen();
+    createDashboardScreen();
+    createPowerScreen();
+    createTemperatureScreen();
+    createBatteryScreen();
+    createBMSScreen();
+    createGearScreen();
+    createMotorScreen();
+    createRegenScreen();
+    createWiFiScreen();
+    createSettingsScreen();
+    
+    // Load splash screen
+    setScreen(SCREEN_SPLASH);
+    
+    Serial.println("LVGL UI initialized successfully!");
     return true;
 }
 
-void UIManager::update() {
-    if (millis() - lastUpdateTime < 100) return;
-    lastUpdateTime = millis();
+void UIManager::lvgl_flush_cb(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
+    uint32_t w = (area->x2 - area->x1 + 1);
+    uint32_t h = (area->y2 - area->y1 + 1);
     
-    switch (currentScreen) {
-        case SCREEN_SPLASH:
-            // Splash is static, drawn once
-            break;
-        case SCREEN_DASHBOARD:
-            drawDashboard();
-            break;
-        case SCREEN_POWER:
-            drawPower();
-            break;
-        case SCREEN_TEMPERATURE:
-            drawTemperature();
-            break;
-        case SCREEN_BATTERY:
-            drawBattery();
-            break;
-        case SCREEN_BMS:
-            drawBMS();
-            break;
-        case SCREEN_GEAR:
-            drawGear();
-            break;
-        case SCREEN_MOTOR:
-            drawMotor();
-            break;
-        case SCREEN_REGEN:
-            drawRegen();
-            break;
-        case SCREEN_WIFI:
-            drawWiFi();
-            break;
-        case SCREEN_SETTINGS:
-            drawSettings();
-            break;
-        default:
-            break;
+    // Push pixels to M5GFX display
+    M5.Display.startWrite();
+    M5.Display.setAddrWindow(area->x1, area->y1, w, h);
+    M5.Display.pushPixels((uint16_t*)&color_p->full, w * h, true);
+    M5.Display.endWrite();
+    
+    lv_disp_flush_ready(disp);
+}
+
+void UIManager::lvgl_encoder_read_cb(lv_indev_drv_t* indev_drv, lv_indev_data_t* data) {
+    // This will be handled by InputManager externally
+    // For now, just report no change
+    data->enc_diff = 0;
+    data->state = LV_INDEV_STATE_RELEASED;
+}
+
+void UIManager::update() {
+    // Handle LVGL tasks
+    lv_timer_handler();
+    
+    // Update lock screen if active
+    if (currentScreen == SCREEN_LOCK && immobilizer) {
+        updateLockScreen();
+    }
+    
+    // Update current screen data every 100ms
+    if (millis() - lastUpdateTime >= 100) {
+        lastUpdateTime = millis();
+        
+        switch (currentScreen) {
+            case SCREEN_LOCK:
+                // Lock screen updates handled above
+                break;
+            case SCREEN_DASHBOARD:
+                updateDashboard();
+                break;
+            case SCREEN_POWER:
+                updatePower();
+                break;
+            case SCREEN_TEMPERATURE:
+                updateTemperature();
+                break;
+            case SCREEN_BATTERY:
+                updateBattery();
+                break;
+            case SCREEN_BMS:
+                updateBMS();
+                break;
+            case SCREEN_GEAR:
+                updateGear();
+                break;
+            case SCREEN_MOTOR:
+                updateMotor();
+                break;
+            case SCREEN_REGEN:
+                updateRegen();
+                break;
+            default:
+                break;
+        }
     }
 }
 
 void UIManager::setScreen(ScreenID screen) {
     if (screen >= SCREEN_COUNT) return;
     
-    // Reset BMS page when leaving BMS screen
-    if (currentScreen == SCREEN_BMS && screen != SCREEN_BMS) {
-        bmsPage = 0;
-    }
-    
     currentScreen = screen;
-    editing = false;
-    clearScreen();
-}
-
-void UIManager::nextScreen() {
-    ScreenID next = (ScreenID)((currentScreen + 1) % SCREEN_COUNT);
-    if (next == SCREEN_SPLASH) next = SCREEN_DASHBOARD;
-    setScreen(next);
-}
-
-void UIManager::previousScreen() {
-    ScreenID prev = (ScreenID)(currentScreen - 1);
-    if (prev < SCREEN_DASHBOARD) prev = (ScreenID)(SCREEN_COUNT - 1);
-    setScreen(prev);
-}
-
-void UIManager::incrementValue() {
-    if (editing) {
-        editingValue += 1;
-    }
-}
-
-void UIManager::decrementValue() {
-    if (editing) {
-        editingValue -= 1;
-    }
-}
-
-void UIManager::selectValue() {
-    if (editing) {
-        // Save the value
-        CANParameter* param = canManager->getParameterByIndex(editingParamIndex);
-        if (param) {
-            canManager->setParameter(param->id, editingValue);
-        }
-        editing = false;
-    }
-}
-
-void UIManager::nextBMSPage() {
-    if (currentScreen == SCREEN_BMS) {
-        bmsPage++;
-        if (bmsPage >= bmsMaxPages) {
-            bmsPage = 0;
-        }
-        clearScreen();
-    }
-}
-
-void UIManager::previousBMSPage() {
-    if (currentScreen == SCREEN_BMS) {
-        if (bmsPage == 0) {
-            bmsPage = bmsMaxPages - 1;
-        } else {
-            bmsPage--;
-        }
-        clearScreen();
-    }
-}
-
-void UIManager::showSplash() {
-    clearScreen();
     
-    M5.Display.setTextDatum(middle_center);
+    if (screens[screen]) {
+        lv_scr_load_anim(screens[screen], LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
+    }
+}
+
+ScreenID UIManager::getNextScreen() {
+    int next = (int)currentScreen + 1;
+    if (next >= SCREEN_COUNT) next = 0;
+    return (ScreenID)next;
+}
+
+ScreenID UIManager::getPreviousScreen() {
+    int prev = (int)currentScreen - 1;
+    if (prev < 0) prev = SCREEN_COUNT - 1;
+    return (ScreenID)prev;
+}
+
+void UIManager::clearAllScreens() {
+    for (int i = 0; i < SCREEN_COUNT; i++) {
+        if (screens[i]) {
+            lv_obj_del(screens[i]);
+            screens[i] = nullptr;
+        }
+    }
+}
+
+lv_color_t UIManager::getColorForValue(int32_t value, int32_t min_val, int32_t max_val) {
+    // Green for low values, yellow for medium, red for high
+    float normalized = (float)(value - min_val) / (max_val - min_val);
     
-    // Title - larger and bolder
-    M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-    M5.Display.setTextSize(3);
-    M5.Display.drawString("ZombieVerter", SCREEN_CENTER_X, SCREEN_CENTER_Y - 40);
+    if (normalized < 0.5f) {
+        // Green to Yellow
+        uint8_t r = (uint8_t)(normalized * 2.0f * 255);
+        return lv_color_make(r, 255, 0);
+    } else {
+        // Yellow to Red
+        uint8_t g = (uint8_t)((1.0f - (normalized - 0.5f) * 2.0f) * 255);
+        return lv_color_make(255, g, 0);
+    }
+}
+
+void UIManager::setMeterValue(lv_obj_t* meter, lv_meter_indicator_t* indic, int32_t value, int32_t min_val, int32_t max_val) {
+    if (!meter || !indic) return;
+    
+    // Clamp value
+    if (value < min_val) value = min_val;
+    if (value > max_val) value = max_val;
+    
+    lv_meter_set_indicator_value(meter, indic, value);
+}
+
+// ============================================================================
+// SCREEN CREATION FUNCTIONS
+// ============================================================================
+
+void UIManager::createSplashScreen() {
+    screens[SCREEN_SPLASH] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_SPLASH], lv_color_black(), 0);
+    
+    // Title
+    lv_obj_t* title = lv_label_create(screens[SCREEN_SPLASH]);
+    lv_label_set_text(title, "ZombieVerter");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(title, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_obj_align(title, LV_ALIGN_CENTER, 0, -40);
     
     // Subtitle
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString("Display", SCREEN_CENTER_X, SCREEN_CENTER_Y);
+    lv_obj_t* subtitle = lv_label_create(screens[SCREEN_SPLASH]);
+    lv_label_set_text(subtitle, "M5Dial Display");
+    lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(subtitle, lv_palette_lighten(LV_PALETTE_CYAN, 2), 0);
+    lv_obj_align(subtitle, LV_ALIGN_CENTER, 0, -10);
     
-    // Version/Edition - smaller
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.setTextSize(1);
-    M5.Display.drawString("M5Stack Dial Edition", SCREEN_CENTER_X, SCREEN_CENTER_Y + 40);
-    M5.Display.drawString("v1.0", SCREEN_CENTER_X, SCREEN_CENTER_Y + 60);
+    // Version
+    lv_obj_t* version = lv_label_create(screens[SCREEN_SPLASH]);
+    lv_label_set_text(version, "v1.1.0");
+    lv_obj_set_style_text_font(version, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(version, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(version, LV_ALIGN_CENTER, 0, 20);
+    
+    // Spinner
+    lv_obj_t* spinner = lv_spinner_create(screens[SCREEN_SPLASH], 1000, 60);
+    lv_obj_set_size(spinner, 40, 40);
+    lv_obj_align(spinner, LV_ALIGN_CENTER, 0, 60);
+    lv_obj_set_style_arc_color(spinner, lv_palette_main(LV_PALETTE_CYAN), LV_PART_INDICATOR);
 }
 
-void UIManager::showConnectionStatus(bool connected) {
-    int16_t y = SCREEN_HEIGHT - 20;
-    M5.Display.fillRect(0, y, SCREEN_WIDTH, 20, TFT_BLACK);
+void UIManager::createDashboardScreen() {
+    screens[SCREEN_DASHBOARD] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_DASHBOARD], lv_color_black(), 0);
     
-    M5.Display.setTextColor(connected ? TFT_GREEN : TFT_RED);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString(connected ? "CAN Connected" : "CAN Disconnected", 
-                         SCREEN_CENTER_X, SCREEN_HEIGHT - 5);
+    // Main RPM meter (large, centered)
+    dash_rpm_meter = lv_meter_create(screens[SCREEN_DASHBOARD]);
+    lv_obj_set_size(dash_rpm_meter, 200, 200);
+    lv_obj_center(dash_rpm_meter);
+    lv_obj_set_style_bg_opa(dash_rpm_meter, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(dash_rpm_meter, 0, 0);
+    
+    // Create RPM scale (x100 - shows 0 to 80 for 0-8000 RPM)
+    lv_meter_scale_t* scale_rpm = lv_meter_add_scale(dash_rpm_meter);
+    lv_meter_set_scale_ticks(dash_rpm_meter, scale_rpm, 41, 2, 10, lv_palette_main(LV_PALETTE_GREY));
+    lv_meter_set_scale_major_ticks(dash_rpm_meter, scale_rpm, 8, 3, 15, lv_color_white(), 10);
+    lv_meter_set_scale_range(dash_rpm_meter, scale_rpm, 0, 80, 270, 135);  // 0-80 (x100)
+    
+    // Add colored arc indicators
+    dash_rpm_arc = lv_meter_add_arc(dash_rpm_meter, scale_rpm, 8, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_meter_set_indicator_start_value(dash_rpm_meter, dash_rpm_arc, 0);
+    lv_meter_set_indicator_end_value(dash_rpm_meter, dash_rpm_arc, 0);
+    
+    // Add needle
+    dash_rpm_needle = lv_meter_add_needle_line(dash_rpm_meter, scale_rpm, 4, lv_palette_main(LV_PALETTE_CYAN), -10);
+    
+    // Create hidden label for updateDashboard (don't display it)
+    dash_rpm_label = lv_label_create(screens[SCREEN_DASHBOARD]);
+    lv_obj_add_flag(dash_rpm_label, LV_OBJ_FLAG_HIDDEN);  // Hide the label
+    
+    // SOC arc (outer ring)
+    dash_soc_arc = lv_arc_create(screens[SCREEN_DASHBOARD]);
+    lv_obj_set_size(dash_soc_arc, 220, 220);
+    lv_obj_center(dash_soc_arc);
+    lv_arc_set_rotation(dash_soc_arc, 135);
+    lv_arc_set_bg_angles(dash_soc_arc, 0, 270);
+    lv_arc_set_value(dash_soc_arc, 0);
+    lv_obj_set_style_arc_width(dash_soc_arc, 6, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(dash_soc_arc, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+    lv_obj_remove_style(dash_soc_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(dash_soc_arc, LV_OBJ_FLAG_CLICKABLE);
+    
+    // Voltage label (top)
+    dash_voltage_label = lv_label_create(screens[SCREEN_DASHBOARD]);
+    lv_label_set_text(dash_voltage_label, "---V");
+    lv_obj_set_style_text_font(dash_voltage_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(dash_voltage_label, lv_color_white(), 0);
+    lv_obj_align(dash_voltage_label, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // Power label (bottom)
+    dash_power_label = lv_label_create(screens[SCREEN_DASHBOARD]);
+    lv_label_set_text(dash_power_label, "0.0kW");
+    lv_obj_set_style_text_font(dash_power_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(dash_power_label, lv_color_white(), 0);
+    lv_obj_align(dash_power_label, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
-void UIManager::drawDashboard() {
-    clearScreen();
+// ============================================================================
+// STUB IMPLEMENTATIONS - To be completed following LVGL_MIGRATION.md
+// ============================================================================
+
+/**
+ * Complete UIManager.cpp Implementation
+ * Replace the stub implementations (lines 303-430) with this code
+ * 
+ * This provides all 11 screens fully implemented with LVGL widgets
+ */
+
+// ============================================================================
+// POWER SCREEN - Power meter with multi-zone arcs
+// ============================================================================
+
+void UIManager::createPowerScreen() {
+    screens[SCREEN_POWER] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_POWER], lv_color_black(), 0);
     
-    M5.Display.setTextDatum(middle_center);
+    // Central power meter (LARGER - 220x220 instead of 180x180)
+    power_meter = lv_meter_create(screens[SCREEN_POWER]);
+    lv_obj_set_size(power_meter, 220, 220);  // Increased size
+    lv_obj_center(power_meter);
+    lv_obj_set_style_bg_opa(power_meter, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(power_meter, 0, 0);
+    
+    // Create power scale (-50kW to +150kW)
+    lv_meter_scale_t* scale = lv_meter_add_scale(power_meter);
+    lv_meter_set_scale_ticks(power_meter, scale, 41, 2, 10, lv_palette_darken(LV_PALETTE_GREY, 2));
+    lv_meter_set_scale_major_ticks(power_meter, scale, 8, 3, 15, lv_color_white(), 10);
+    lv_meter_set_scale_range(power_meter, scale, -50, 150, 270, 135);
+    
+    // Add colored arc zones (THICKER - 10 instead of 6)
+    lv_meter_indicator_t* arc_regen = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_meter_set_indicator_start_value(power_meter, arc_regen, -50);
+    lv_meter_set_indicator_end_value(power_meter, arc_regen, 0);
+    
+    lv_meter_indicator_t* arc_low = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_meter_set_indicator_start_value(power_meter, arc_low, 0);
+    lv_meter_set_indicator_end_value(power_meter, arc_low, 50);
+    
+    lv_meter_indicator_t* arc_med = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_YELLOW), 0);
+    lv_meter_set_indicator_start_value(power_meter, arc_med, 50);
+    lv_meter_set_indicator_end_value(power_meter, arc_med, 100);
+    
+    lv_meter_indicator_t* arc_high = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_meter_set_indicator_start_value(power_meter, arc_high, 100);
+    lv_meter_set_indicator_end_value(power_meter, arc_high, 150);
+    
+    // Active power arc (THICKER - 12 instead of 8)
+    power_arc = lv_meter_add_arc(power_meter, scale, 12, lv_color_white(), 0);
+    lv_meter_set_indicator_start_value(power_meter, power_arc, 0);
+    lv_meter_set_indicator_end_value(power_meter, power_arc, 0);
+    
+    // Needle
+    power_needle = lv_meter_add_needle_line(power_meter, scale, 4, lv_color_white(), -10);
+    
+    // Power value label (center)
+    power_label = lv_label_create(screens[SCREEN_POWER]);
+    lv_label_set_text(power_label, "0.0");
+    lv_obj_set_style_text_font(power_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_color(power_label, lv_color_white(), 0);
+    lv_obj_align(power_label, LV_ALIGN_CENTER, 0, -10);
+    
+    // kW unit
+    lv_obj_t* unit = lv_label_create(screens[SCREEN_POWER]);
+    lv_label_set_text(unit, "kW");
+    lv_obj_set_style_text_font(unit, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(unit, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(unit, LV_ALIGN_CENTER, 0, 20);
+    
+    // Create hidden labels for corner values (don't display them)
+    power_voltage_label = lv_label_create(screens[SCREEN_POWER]);
+    lv_obj_add_flag(power_voltage_label, LV_OBJ_FLAG_HIDDEN);
+    
+    power_current_label = lv_label_create(screens[SCREEN_POWER]);
+    lv_obj_add_flag(power_current_label, LV_OBJ_FLAG_HIDDEN);
+    
+    // SOC (bottom)
+    power_soc_label = lv_label_create(screens[SCREEN_POWER]);
+    lv_label_set_text(power_soc_label, "SOC: ---%");
+    lv_obj_set_style_text_font(power_soc_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(power_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(power_soc_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+// ============================================================================
+// TEMPERATURE SCREEN - Dual arc meters for motor and inverter
+// ============================================================================
+
+void UIManager::createTemperatureScreen() {
+    screens[SCREEN_TEMPERATURE] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_TEMPERATURE], lv_color_black(), 0);
     
     // Title
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("CAN Status", SCREEN_CENTER_X, 20);
+    lv_obj_t* title = lv_label_create(screens[SCREEN_TEMPERATURE]);
+    lv_label_set_text(title, "TEMPERATURE");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);  // Larger/bolder
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);  // White like battery
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);  // Lower to match battery
     
-    int y = 60;
+    // Motor temp arc (left side)
+    temp_motor_arc = lv_arc_create(screens[SCREEN_TEMPERATURE]);
+    lv_obj_set_size(temp_motor_arc, 100, 100);
+    lv_obj_align(temp_motor_arc, LV_ALIGN_LEFT_MID, 15, 0);
+    lv_arc_set_rotation(temp_motor_arc, 135);
+    lv_arc_set_bg_angles(temp_motor_arc, 0, 270);
+    lv_arc_set_value(temp_motor_arc, 0);
+    lv_arc_set_range(temp_motor_arc, 0, 120);
+    lv_obj_set_style_arc_width(temp_motor_arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(temp_motor_arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_remove_style(temp_motor_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(temp_motor_arc, LV_OBJ_FLAG_CLICKABLE);
     
-    // Connection status
-    M5.Display.setTextSize(3);
-    if (canManager->isConnected()) {
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.drawString("RECEIVING", SCREEN_CENTER_X, y);
-        y += 40;
-        
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString("CAN Messages!", SCREEN_CENTER_X, y);
-    } else {
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("NO CAN", SCREEN_CENTER_X, y);
-    }
+    // Motor temp label
+    temp_motor_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
+    lv_label_set_text(temp_motor_label, "Motor\n--°C");
+    lv_obj_set_style_text_font(temp_motor_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(temp_motor_label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(temp_motor_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(temp_motor_label, LV_ALIGN_LEFT_MID, 35, 0);
     
-    y = 140;
+    // Inverter temp arc (right side)
+    temp_inverter_arc = lv_arc_create(screens[SCREEN_TEMPERATURE]);
+    lv_obj_set_size(temp_inverter_arc, 100, 100);
+    lv_obj_align(temp_inverter_arc, LV_ALIGN_RIGHT_MID, -15, 0);
+    lv_arc_set_rotation(temp_inverter_arc, 135);
+    lv_arc_set_bg_angles(temp_inverter_arc, 0, 270);
+    lv_arc_set_value(temp_inverter_arc, 0);
+    lv_arc_set_range(temp_inverter_arc, 0, 100);
+    lv_obj_set_style_arc_width(temp_inverter_arc, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(temp_inverter_arc, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_remove_style(temp_inverter_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(temp_inverter_arc, LV_OBJ_FLAG_CLICKABLE);
     
-    // Check for parameter updates
-    int updatedCount = 0;
-    for (int i = 0; i < canManager->getParameterCount(); i++) {
-        CANParameter* param = canManager->getParameterByIndex(i);
-        if (param && (millis() - param->lastUpdateTime) < 5000) {
-            updatedCount++;
-        }
-    }
+    // Inverter temp label
+    temp_inverter_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
+    lv_label_set_text(temp_inverter_label, "Inverter\n--°C");
+    lv_obj_set_style_text_font(temp_inverter_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(temp_inverter_label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(temp_inverter_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(temp_inverter_label, LV_ALIGN_RIGHT_MID, -35, 0);
     
-    M5.Display.setTextSize(2);
-    if (updatedCount > 0) {
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%d params OK", updatedCount);
-        M5.Display.drawString(buf, SCREEN_CENTER_X, y);
-    } else {
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("No param data", SCREEN_CENTER_X, y);
-        y += 30;
-        
-        M5.Display.setTextSize(1);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString("Need: 0x183 or 0x283", SCREEN_CENTER_X, y);
-        y += 15;
-        M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-        M5.Display.drawString("(Node 3 PDO messages)", SCREEN_CENTER_X, y);
-    }
+    // Battery temp (bottom)
+    temp_battery_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
+    lv_label_set_text(temp_battery_label, "Battery: --°C");
+    lv_obj_set_style_text_font(temp_battery_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(temp_battery_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(temp_battery_label, LV_ALIGN_BOTTOM_MID, 0, -15);
 }
 
-void UIManager::updateLastCANID(uint32_t canID) {
-    // Not used in this simplified version
-}
+// ============================================================================
+// BATTERY SCREEN - SOC gauge with battery metrics
+// ============================================================================
 
-void UIManager::drawPower() {
-    clearScreen();
-    
-    CANParameter* power = canManager->getParameter(2);
-    CANParameter* current = canManager->getParameter(4);
+void UIManager::createBatteryScreen() {
+    screens[SCREEN_BATTERY] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_BATTERY], lv_color_black(), 0);
     
     // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Display.drawString("Power", SCREEN_CENTER_X, 15);
+    lv_obj_t* title = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(title, "SOC");  // Changed from BATTERY
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);  // Larger/bolder
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);  // White
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);  // Lower to be visible
     
-    if (power) {
-        float percent = (float)(power->getValueAsInt() - power->minValue) / 
-                       (power->maxValue - power->minValue);
-        
-        // Extract just the number
-        char valueStr[32];
-        power->toString(valueStr, sizeof(valueStr));
-        char numStr[16] = "";
-        int i = 0, j = 0;
-        while (valueStr[i] && j < 15) {
-            if ((valueStr[i] >= '0' && valueStr[i] <= '9') || valueStr[i] == '.' || valueStr[i] == '-') {
-                numStr[j++] = valueStr[i];
-            } else if (valueStr[i] == ' ') {
-                break;
-            }
-            i++;
-        }
-        numStr[j] = '\0';
-        
-        // Large value in center
-        M5.Display.setTextSize(5);
-        M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-        M5.Display.drawString(numStr, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20);
-        
-        // Unit below
-        M5.Display.setTextSize(3);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString(power->unit, SCREEN_CENTER_X, SCREEN_CENTER_Y + 25);
-        
-        // Draw ring gauge around edge
-        drawRingGaugeSimple(percent, TFT_ORANGE);
-    }
+    // Central SOC meter
+    battery_soc_meter = lv_meter_create(screens[SCREEN_BATTERY]);
+    lv_obj_set_size(battery_soc_meter, 160, 160);
+    lv_obj_center(battery_soc_meter);
+    lv_obj_set_style_bg_opa(battery_soc_meter, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(battery_soc_meter, 0, 0);
     
-    // Current at bottom
-    if (current) {
-        char valueStr[32];
-        current->toString(valueStr, sizeof(valueStr));
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.setTextDatum(bottom_center);
-        M5.Display.drawString(valueStr, SCREEN_CENTER_X, SCREEN_HEIGHT - 10);
-    }
+    // Create SOC scale (0-100%)
+    lv_meter_scale_t* scale = lv_meter_add_scale(battery_soc_meter);
+    lv_meter_set_scale_ticks(battery_soc_meter, scale, 21, 2, 8, lv_palette_darken(LV_PALETTE_GREY, 2));
+    lv_meter_set_scale_major_ticks(battery_soc_meter, scale, 5, 3, 12, lv_color_white(), 10);
+    lv_meter_set_scale_range(battery_soc_meter, scale, 0, 100, 270, 135);
     
-    // Connection status
-    M5.Display.setTextDatum(top_right);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(canManager->isConnected() ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    M5.Display.drawString(canManager->isConnected() ? "CAN" : "---", SCREEN_WIDTH - 5, 5);
+    // Arc indicator
+    battery_soc_arc = lv_meter_add_arc(battery_soc_meter, scale, 8, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_meter_set_indicator_start_value(battery_soc_meter, battery_soc_arc, 0);
+    lv_meter_set_indicator_end_value(battery_soc_meter, battery_soc_arc, 0);
+    
+    // Needle
+    battery_soc_needle = lv_meter_add_needle_line(battery_soc_meter, scale, 4, lv_color_white(), -10);
+    
+    // SOC percentage (center)
+    battery_soc_label = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(battery_soc_label, "--");
+    lv_obj_set_style_text_font(battery_soc_label, &lv_font_montserrat_40, 0);  // Larger for clarity
+    lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(battery_soc_label, LV_ALIGN_CENTER, 0, -10);
+    
+    // % symbol
+    lv_obj_t* percent = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(percent, "%");
+    lv_obj_set_style_text_font(percent, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(percent, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(percent, LV_ALIGN_CENTER, 0, 20);
+    
+    // Voltage
+    battery_voltage_label = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(battery_voltage_label, "Voltage: ---V");
+    lv_obj_set_style_text_font(battery_voltage_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(battery_voltage_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(battery_voltage_label, LV_ALIGN_BOTTOM_MID, 0, -35);
+    
+    // Current
+    battery_current_label = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(battery_current_label, "Current: ---A");
+    lv_obj_set_style_text_font(battery_current_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(battery_current_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(battery_current_label, LV_ALIGN_BOTTOM_MID, 0, -20);
+    
+    // Temperature
+    battery_temp_label = lv_label_create(screens[SCREEN_BATTERY]);
+    lv_label_set_text(battery_temp_label, "Temp: --°C");
+    lv_obj_set_style_text_font(battery_temp_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(battery_temp_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(battery_temp_label, LV_ALIGN_BOTTOM_MID, 0, -5);
 }
 
-void UIManager::drawTemperature() {
-    clearScreen();
-    
-    CANParameter* motorTemp = canManager->getParameter(5);
-    CANParameter* inverterTemp = canManager->getParameter(6);
+// Continue in next message...
+/**
+ * Complete UIManager.cpp Implementation - Part 2
+ * BMS, Gear, Motor, Regen, WiFi, Settings screens
+ */
+
+// ============================================================================
+// BMS SCREEN - Cell voltage and temperature info
+// ============================================================================
+
+void UIManager::createBMSScreen() {
+    screens[SCREEN_BMS] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_BMS], lv_color_black(), 0);
     
     // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Display.drawString("Temperature", SCREEN_CENTER_X, 15);
+    lv_obj_t* title = lv_label_create(screens[SCREEN_BMS]);
+    lv_label_set_text(title, "BMS STATUS");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);  // Larger
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
     
-    // Motor temp - top half
-    if (motorTemp) {
-        char valueStr[32];
-        motorTemp->toString(valueStr, sizeof(valueStr));
-        
-        // Extract number
-        char numStr[16] = "";
-        int i = 0, j = 0;
-        while (valueStr[i] && j < 15) {
-            if ((valueStr[i] >= '0' && valueStr[i] <= '9') || valueStr[i] == '-') {
-                numStr[j++] = valueStr[i];
-            } else if (valueStr[i] == ' ') {
-                break;
-            }
-            i++;
-        }
-        numStr[j] = '\0';
-        
-        M5.Display.setTextSize(1);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString("Motor", SCREEN_CENTER_X, SCREEN_CENTER_Y - 60);
-        
-        M5.Display.setTextSize(5);
-        M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-        M5.Display.drawString(numStr, SCREEN_CENTER_X, SCREEN_CENTER_Y - 30);
-        
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.drawString(motorTemp->unit, SCREEN_CENTER_X, SCREEN_CENTER_Y + 5);
-    }
+    // Cell max voltage (LARGER FONT)
+    bms_cell_max_label = lv_label_create(screens[SCREEN_BMS]);
+    lv_label_set_text(bms_cell_max_label, "Max Cell: -.--V");
+    lv_obj_set_style_text_font(bms_cell_max_label, &lv_font_montserrat_20, 0);  // Increased from 14
+    lv_obj_set_style_text_color(bms_cell_max_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(bms_cell_max_label, LV_ALIGN_TOP_MID, 0, 60);
     
-    // Inverter temp - bottom
-    if (inverterTemp) {
-        char valueStr[32];
-        inverterTemp->toString(valueStr, sizeof(valueStr));
-        
-        M5.Display.setTextDatum(bottom_center);
-        M5.Display.setTextSize(1);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.drawString("Inverter:", SCREEN_CENTER_X - 30, SCREEN_HEIGHT - 10);
-        
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.drawString(valueStr, SCREEN_CENTER_X + 30, SCREEN_HEIGHT - 10);
-    }
+    // Cell min voltage (LARGER FONT)
+    bms_cell_min_label = lv_label_create(screens[SCREEN_BMS]);
+    lv_label_set_text(bms_cell_min_label, "Min Cell: -.--V");
+    lv_obj_set_style_text_font(bms_cell_min_label, &lv_font_montserrat_20, 0);  // Increased from 14
+    lv_obj_set_style_text_color(bms_cell_min_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
+    lv_obj_align(bms_cell_min_label, LV_ALIGN_TOP_MID, 0, 95);
     
-    // Connection status
-    M5.Display.setTextDatum(top_right);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(canManager->isConnected() ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    M5.Display.drawString(canManager->isConnected() ? "CAN" : "---", SCREEN_WIDTH - 5, 5);
+    // Cell delta (LARGER FONT)
+    bms_cell_delta_label = lv_label_create(screens[SCREEN_BMS]);
+    lv_label_set_text(bms_cell_delta_label, "Delta: ---mV");
+    lv_obj_set_style_text_font(bms_cell_delta_label, &lv_font_montserrat_16, 0);  // Increased from 12
+    lv_obj_set_style_text_color(bms_cell_delta_label, lv_color_white(), 0);
+    lv_obj_align(bms_cell_delta_label, LV_ALIGN_CENTER, 0, 0);
+    
+    // SOC bar - HIDDEN (create but don't display)
+    bms_soc_bar = lv_bar_create(screens[SCREEN_BMS]);
+    lv_obj_add_flag(bms_soc_bar, LV_OBJ_FLAG_HIDDEN);
+    
+    // Max temp (LARGER FONT)
+    bms_temp_max_label = lv_label_create(screens[SCREEN_BMS]);
+    lv_label_set_text(bms_temp_max_label, "Max Temp: --°C");
+    lv_obj_set_style_text_font(bms_temp_max_label, &lv_font_montserrat_20, 0);  // Increased from 14
+    lv_obj_set_style_text_color(bms_temp_max_label, lv_color_white(), 0);
+    lv_obj_align(bms_temp_max_label, LV_ALIGN_BOTTOM_MID, 0, -30);
 }
 
-void UIManager::drawBattery() {
-    clearScreen();
-    
-    CANParameter* soc = canManager->getParameter(7);
-    CANParameter* voltage = canManager->getParameter(3);
+// ============================================================================
+// GEAR SCREEN - Gear selection display
+// ============================================================================
+
+void UIManager::createGearScreen() {
+    screens[SCREEN_GEAR] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_GEAR], lv_color_black(), 0);
     
     // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Display.drawString("Battery", SCREEN_CENTER_X, 15);
+    lv_obj_t* title = lv_label_create(screens[SCREEN_GEAR]);
+    lv_label_set_text(title, "GEAR SELECTION");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);  // White for visibility
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);  // Lower to be visible
     
-    if (soc) {
-        float percent = (float)soc->getValueAsInt() / 100.0f;
-        
-        // Extract number
-        char valueStr[32];
-        soc->toString(valueStr, sizeof(valueStr));
-        char numStr[16] = "";
-        int i = 0, j = 0;
-        while (valueStr[i] && j < 15) {
-            if ((valueStr[i] >= '0' && valueStr[i] <= '9') || valueStr[i] == '.') {
-                numStr[j++] = valueStr[i];
-            } else if (valueStr[i] == ' ') {
-                break;
-            }
-            i++;
-        }
-        numStr[j] = '\0';
-        
-        // SOC label
-        M5.Display.setTextSize(1);
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString("State of Charge", SCREEN_CENTER_X, SCREEN_CENTER_Y - 60);
-        
-        // Large percentage
-        M5.Display.setTextSize(6);
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.drawString(numStr, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20);
-        
-        // % symbol
-        M5.Display.setTextSize(3);
-        M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-        M5.Display.drawString("%", SCREEN_CENTER_X, SCREEN_CENTER_Y + 25);
-        
-        // Draw ring gauge
-        drawRingGaugeSimple(percent, TFT_GREEN);
-    }
+    // Current gear (large center)
+    gear_current_label = lv_label_create(screens[SCREEN_GEAR]);
+    lv_label_set_text(gear_current_label, "AUTO");
+    lv_obj_set_style_text_font(gear_current_label, &lv_font_montserrat_40, 0);  // Larger for clarity
+    lv_obj_set_style_text_color(gear_current_label, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_obj_align(gear_current_label, LV_ALIGN_CENTER, 0, -10);
     
-    // Voltage at bottom
-    if (voltage) {
-        char valueStr[32];
-        voltage->toString(valueStr, sizeof(valueStr));
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.setTextDatum(bottom_center);
-        M5.Display.drawString(valueStr, SCREEN_CENTER_X, SCREEN_HEIGHT - 10);
-    }
-    
-    // Connection status
-    M5.Display.setTextDatum(top_right);
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(canManager->isConnected() ? TFT_GREEN : TFT_RED, TFT_BLACK);
-    M5.Display.drawString(canManager->isConnected() ? "CAN" : "---", SCREEN_WIDTH - 5, 5);
-}
-
-void UIManager::drawBMS() {
-    clearScreen();
-    
-    // Parse Victron/REC BMS data from 0x373
-    // This message contains min/max cell voltages and temps
-    // We'll store this data when we receive it
-    
-    // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("BMS", SCREEN_CENTER_X, 20);
-    
-    int yPos = 55;
-    int lineHeight = 45;
-    
-    // Get BMS summary parameters
-    CANParameter* cellVoltMax = canManager->getParameter(20);
-    CANParameter* cellVoltMin = canManager->getParameter(21);
-    CANParameter* cellTempMax = canManager->getParameter(24);
-    
-    // Max Cell Voltage
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-    M5.Display.drawString("Max", 10, yPos);
-    
-    M5.Display.setTextDatum(middle_right);
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (cellVoltMax && cellVoltMax->lastUpdateTime > 0) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.3f V", cellVoltMax->getValueAsInt() / 1000.0);
-        M5.Display.drawString(buf, SCREEN_WIDTH - 10, yPos);
-    } else {
-        M5.Display.drawString("--- V", SCREEN_WIDTH - 10, yPos);
-    }
-    yPos += lineHeight;
-    
-    // Min Cell Voltage
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-    M5.Display.drawString("Min", 10, yPos);
-    
-    M5.Display.setTextDatum(middle_right);
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (cellVoltMin && cellVoltMin->lastUpdateTime > 0) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%.3f V", cellVoltMin->getValueAsInt() / 1000.0);
-        M5.Display.drawString(buf, SCREEN_WIDTH - 10, yPos);
-    } else {
-        M5.Display.drawString("--- V", SCREEN_WIDTH - 10, yPos);
-    }
-    yPos += lineHeight;
-    
-    // Delta (calculated)
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Display.drawString("Delta", 10, yPos);
-    
-    M5.Display.setTextDatum(middle_right);
-    M5.Display.setTextSize(3);
-    if (cellVoltMax && cellVoltMin && 
-        cellVoltMax->lastUpdateTime > 0 && cellVoltMin->lastUpdateTime > 0) {
-        int32_t delta = cellVoltMax->getValueAsInt() - cellVoltMin->getValueAsInt();
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%d mV", delta);
-        
-        // Color code: red if >100mV
-        M5.Display.setTextColor(delta > 100 ? TFT_RED : TFT_WHITE, TFT_BLACK);
-        M5.Display.drawString(buf, SCREEN_WIDTH - 10, yPos);
-    } else {
-        M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-        M5.Display.drawString("--- mV", SCREEN_WIDTH - 10, yPos);
-    }
-    yPos += lineHeight;
-    
-    // Max Temperature
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_MAGENTA, TFT_BLACK);
-    M5.Display.drawString("Temp", 10, yPos);
-    
-    M5.Display.setTextDatum(middle_right);
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    if (cellTempMax && cellTempMax->lastUpdateTime > 0) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%d C", cellTempMax->getValueAsInt());
-        M5.Display.drawString(buf, SCREEN_WIDTH - 10, yPos);
-    } else {
-        M5.Display.drawString("--- C", SCREEN_WIDTH - 10, yPos);
-    }
-}
-
-void UIManager::drawBMSSummary() {
-    // Not used - keeping for compatibility
-    drawBMS();
-}
-
-void UIManager::drawBMSModule(uint8_t moduleIndex) {
-    // Not used - keeping for compatibility
-    drawBMS();
-}
-
-
-void UIManager::drawWiFi() {
-    clearScreen();
-    
-    M5.Display.setTextDatum(middle_center);
-    
-    // Title - larger
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("WiFi", SCREEN_CENTER_X, 30);
-    
-    // Status indicator
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-    M5.Display.drawString("ACTIVE", SCREEN_CENTER_X, 60);
-    
-    // SSID - very clear and large
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-    M5.Display.drawString("Connect to:", SCREEN_CENTER_X, 90);
-    
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.drawString("ZombieVerter", SCREEN_CENTER_X, 110);
-    M5.Display.drawString("-Display", SCREEN_CENTER_X, 130);
-    
-    // Password - clear
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Display.drawString("Password:", SCREEN_CENTER_X, 155);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    M5.Display.drawString("zombieverter", SCREEN_CENTER_X, 175);
-    
-    // IP Address - largest and most important
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-    M5.Display.drawString("192.168.4.1", SCREEN_CENTER_X, 210);
-    
-    // Exit instruction - small at bottom
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString("Rotate to exit", SCREEN_CENTER_X, SCREEN_HEIGHT - 3);
-}
-
-void UIManager::drawSettings() {
-    clearScreen();
-    
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("CAN Debug", SCREEN_CENTER_X, 15);
-    
-    M5.Display.setTextSize(1);
-    
-    int y = 40;
-    
-    // Show connection status
-    if (canManager->isConnected()) {
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.drawString("CONNECTED", SCREEN_CENTER_X, y);
-    } else {
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("DISCONNECTED", SCREEN_CENTER_X, y);
-    }
-    y += 20;
-    
-    // Show parameter count
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "%d params loaded", canManager->getParameterCount());
-    M5.Display.drawString(buf, SCREEN_CENTER_X, y);
-    y += 20;
-    
-    // Check if ANY parameters have recent updates
-    bool anyUpdated = false;
-    int updateCount = 0;
-    unsigned long oldestUpdate = 0;
-    
-    for (int i = 0; i < canManager->getParameterCount(); i++) {
-        CANParameter* param = canManager->getParameterByIndex(i);
-        if (param) {
-            unsigned long age = millis() - param->lastUpdateTime;
-            if (age < 5000) {
-                anyUpdated = true;
-                updateCount++;
-            }
-            if (param->lastUpdateTime > 0 && (oldestUpdate == 0 || param->lastUpdateTime > oldestUpdate)) {
-                oldestUpdate = param->lastUpdateTime;
-            }
-        }
-    }
-    
-    // Show update status - LARGE and CLEAR
-    if (anyUpdated) {
-        M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-        M5.Display.setTextSize(2);
-        snprintf(buf, sizeof(buf), "%d UPDATING!", updateCount);
-        M5.Display.drawString(buf, SCREEN_CENTER_X, y);
-        y += 25;
-    } else {
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.setTextSize(2);
-        M5.Display.drawString("NO UPDATES", SCREEN_CENTER_X, y);
-        y += 25;
-    }
-    
-    // Show sample of what's updating - show MORE parameters
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("Param Values:", SCREEN_CENTER_X, y);
-    y += 15;
-    
-    // Show parameters 1-8 specifically
-    for (int id = 1; id <= 8 && y < 210; id++) {
-        CANParameter* param = canManager->getParameter(id);
-        if (param) {
-            unsigned long age = millis() - param->lastUpdateTime;
-            if (age < 5000) {
-                M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-            } else {
-                M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-            }
-            snprintf(buf, sizeof(buf), "ID%d=%d %s", param->id, param->getValueAsInt(), param->unit);
-            M5.Display.drawString(buf, SCREEN_CENTER_X, y);
-            y += 11;
-        }
-    }
-    
-    if (!anyUpdated && oldestUpdate > 0) {
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        unsigned long age = (millis() - oldestUpdate) / 1000;
-        snprintf(buf, sizeof(buf), "Last: %lus ago", age);
-        M5.Display.drawString(buf, SCREEN_CENTER_X, y);
-    }
-    
-    // Show what we're looking for
-    y = 180;
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    M5.Display.drawString("Listening for:", SCREEN_CENTER_X, y);
-    y += 12;
-    M5.Display.drawString("0x183, 0x283", SCREEN_CENTER_X, y);
-    y += 12;
-    M5.Display.drawString("0x5XX, any 8-byte", SCREEN_CENTER_X, y);
-}
-
-void UIManager::clearScreen() {
-    M5.Display.fillScreen(TFT_BLACK);
-}
-
-void UIManager::drawCenteredText(const char* text, int16_t y, uint8_t size) {
-    M5.Display.setTextSize(size);
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.drawString(text, SCREEN_CENTER_X, y);
-}
-
-void UIManager::drawArcGauge(int16_t centerX, int16_t centerY, int16_t radius,
-                             float startAngle, float endAngle,
-                             float value, float min, float max,
-                             uint32_t color) {
-    float percent = (value - min) / (max - min);
-    if (percent < 0) percent = 0;
-    if (percent > 1) percent = 1;
-    
-    float totalAngle = endAngle - startAngle;
-    float fillAngle = startAngle + (totalAngle * percent);
-    
-    // Draw background arc using circles
-    for (int i = 0; i < 10; i++) {
-        M5.Display.drawCircle(centerX, centerY, radius - i, TFT_DARKGREY);
-    }
-    
-    // Draw filled arc using line segments
-    if (percent > 0) {
-        int segments = 50;
-        for (int i = 0; i < segments * percent; i++) {
-            float angle = startAngle + (i * totalAngle / segments);
-            float nextAngle = startAngle + ((i + 1) * totalAngle / segments);
-            
-            int x1 = centerX + (radius - 10) * cos(angle * DEG_TO_RAD);
-            int y1 = centerY + (radius - 10) * sin(angle * DEG_TO_RAD);
-            int x2 = centerX + radius * cos(angle * DEG_TO_RAD);
-            int y2 = centerY + radius * sin(angle * DEG_TO_RAD);
-            
-            int x3 = centerX + (radius - 10) * cos(nextAngle * DEG_TO_RAD);
-            int y3 = centerY + (radius - 10) * sin(nextAngle * DEG_TO_RAD);
-            int x4 = centerX + radius * cos(nextAngle * DEG_TO_RAD);
-            int y4 = centerY + radius * sin(nextAngle * DEG_TO_RAD);
-            
-            M5.Display.fillTriangle(x1, y1, x2, y2, x3, y3, color);
-            M5.Display.fillTriangle(x2, y2, x3, y3, x4, y4, color);
-        }
-    }
-}
-
-void UIManager::drawRingGauge(const char* label, const char* value,
-                             float percent, uint32_t color) {
-    if (percent < 0) percent = 0;
-    if (percent > 1) percent = 1;
-    
-    // Draw background ring
-    M5.Display.drawCircle(SCREEN_CENTER_X, SCREEN_CENTER_Y, 100, TFT_DARKGREY);
-    M5.Display.drawCircle(SCREEN_CENTER_X, SCREEN_CENTER_Y, 95, TFT_DARKGREY);
-    
-    // Draw filled arc using line segments (270 degrees total, starting from bottom)
-    float startAngle = 135;
-    float totalAngle = 270;
-    
-    int segments = 100;
-    for (int i = 0; i < segments * percent; i++) {
-        float angle = startAngle + (i * totalAngle / segments);
-        
-        int x1 = SCREEN_CENTER_X + 95 * cos(angle * DEG_TO_RAD);
-        int y1 = SCREEN_CENTER_Y + 95 * sin(angle * DEG_TO_RAD);
-        int x2 = SCREEN_CENTER_X + 100 * cos(angle * DEG_TO_RAD);
-        int y2 = SCREEN_CENTER_Y + 100 * sin(angle * DEG_TO_RAD);
-        
-        M5.Display.drawLine(x1, y1, x2, y2, color);
-    }
-    
-    // Draw label and value in center
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextColor(TFT_WHITE);
-    
-    M5.Display.setTextSize(1);
-    M5.Display.drawString(label, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20);
-    
-    M5.Display.setTextSize(3);
-    M5.Display.drawString(value, SCREEN_CENTER_X, SCREEN_CENTER_Y + 10);
-}
-
-void UIManager::drawRingGaugeSimple(float percent, uint32_t color) {
-    if (percent < 0) percent = 0;
-    if (percent > 1) percent = 1;
-    
-    // Draw background ring (thinner, at edge)
-    for (int r = 115; r < 119; r++) {
-        M5.Display.drawCircle(SCREEN_CENTER_X, SCREEN_CENTER_Y, r, TFT_DARKGREY);
-    }
-    
-    // Draw filled arc using line segments (270 degrees, starting from bottom)
-    float startAngle = 135;
-    float totalAngle = 270;
-    
-    int segments = 100;
-    for (int i = 0; i < segments * percent; i++) {
-        float angle = startAngle + (i * totalAngle / segments);
-        
-        int x1 = SCREEN_CENTER_X + 115 * cos(angle * DEG_TO_RAD);
-        int y1 = SCREEN_CENTER_Y + 115 * sin(angle * DEG_TO_RAD);
-        int x2 = SCREEN_CENTER_X + 119 * cos(angle * DEG_TO_RAD);
-        int y2 = SCREEN_CENTER_Y + 119 * sin(angle * DEG_TO_RAD);
-        
-        M5.Display.drawLine(x1, y1, x2, y2, color);
-    }
-}
-
-void UIManager::drawGear() {
-    clearScreen();
-    
-    CANParameter* gear = canManager->getParameter(27);
-    
-    // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("GEAR", SCREEN_CENTER_X, 20);
-    
-    if (!gear) {
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("NO DATA", SCREEN_CENTER_X, SCREEN_CENTER_Y);
-        return;
-    }
-    
-    int32_t currentGear = gear->getValueAsInt();
-    
-    // Display current gear - LARGE
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-    M5.Display.drawString("Current:", SCREEN_CENTER_X, 60);
-    
-    M5.Display.setTextSize(5);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    
+    // Gear options around the edge
     const char* gearNames[] = {"LOW", "HIGH", "AUTO", "HI/LO"};
-    M5.Display.drawString(gearNames[currentGear], SCREEN_CENTER_X, SCREEN_CENTER_Y - 10);
-    
-    // Show all options with indicators
-    int16_t yStart = SCREEN_CENTER_Y + 50;
-    M5.Display.setTextSize(2);
+    lv_coord_t positions[][2] = {
+        {30, 80},   // LOW - left
+        {170, 80},  // HIGH - right  
+        {120, 170}, // AUTO - bottom right
+        {60, 170}   // HI/LO - bottom left
+    };
     
     for (int i = 0; i < 4; i++) {
-        int16_t y = yStart + (i * 22);
+        gear_option_labels[i] = lv_label_create(screens[SCREEN_GEAR]);
+        lv_label_set_text(gear_option_labels[i], gearNames[i]);
+        lv_obj_set_style_text_font(gear_option_labels[i], &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(gear_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+        lv_obj_set_pos(gear_option_labels[i], positions[i][0], positions[i][1]);
         
-        if (i == currentGear) {
-            // Current selection - highlighted
-            M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-            M5.Display.drawString(String("► ") + gearNames[i], SCREEN_CENTER_X, y);
-        } else {
-            // Other options - dimmed
-            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-            M5.Display.drawString(String("  ") + gearNames[i], SCREEN_CENTER_X, y);
-        }
+        // Indicator LED
+        gear_indicators[i] = lv_obj_create(screens[SCREEN_GEAR]);
+        lv_obj_set_size(gear_indicators[i], 8, 8);
+        lv_obj_set_style_radius(gear_indicators[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(gear_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 3), 0);
+        lv_obj_set_style_border_width(gear_indicators[i], 0, 0);
+        lv_obj_set_pos(gear_indicators[i], positions[i][0] - 15, positions[i][1] + 5);
     }
     
-    // Instructions
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString("Rotate=adjust | Click=next", SCREEN_CENTER_X, SCREEN_HEIGHT - 3);
+    // Instruction
+    lv_obj_t* inst = lv_label_create(screens[SCREEN_GEAR]);
+    lv_label_set_text(inst, "Rotate to change");
+    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(inst, LV_ALIGN_CENTER, 0, 30);
 }
 
-void UIManager::drawMotor() {
-    clearScreen();
-    
-    CANParameter* motor = canManager->getParameter(129);
+// ============================================================================
+// MOTOR SCREEN - Motor mode selection
+// ============================================================================
+
+void UIManager::createMotorScreen() {
+    screens[SCREEN_MOTOR] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_MOTOR], lv_color_black(), 0);
     
     // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("MOTOR", SCREEN_CENTER_X, 20);
+    lv_obj_t* title = lv_label_create(screens[SCREEN_MOTOR]);
+    lv_label_set_text(title, "MOTOR MODE");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);  // White for visibility
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);  // Lower to be visible
     
-    if (!motor) {
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("NO DATA", SCREEN_CENTER_X, SCREEN_CENTER_Y);
-        return;
-    }
+    // Current mode (large center)
+    motor_current_label = lv_label_create(screens[SCREEN_MOTOR]);
+    lv_label_set_text(motor_current_label, "MG1+MG2");
+    lv_obj_set_style_text_font(motor_current_label, &lv_font_montserrat_32, 0);  // Keep 32 for longer text
+    lv_obj_set_style_text_color(motor_current_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
+    lv_obj_align(motor_current_label, LV_ALIGN_CENTER, 0, -10);
     
-    int32_t currentMotor = motor->getValueAsInt();
-    
-    // Display current mode - LARGE
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-    M5.Display.drawString("Active:", SCREEN_CENTER_X, 60);
-    
-    M5.Display.setTextSize(4);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    
+    // Motor options
     const char* motorNames[] = {"MG1 only", "MG2 only", "MG1+MG2", "Blended"};
-    M5.Display.drawString(motorNames[currentMotor], SCREEN_CENTER_X, SCREEN_CENTER_Y - 10);
-    
-    // Show all options with indicators
-    int16_t yStart = SCREEN_CENTER_Y + 50;
-    M5.Display.setTextSize(2);
+    lv_coord_t positions[][2] = {
+        {20, 80},   // MG1 - left
+        {150, 80},  // MG2 - right
+        {110, 170}, // MG1+MG2 - bottom right
+        {40, 170}   // Blended - bottom left
+    };
     
     for (int i = 0; i < 4; i++) {
-        int16_t y = yStart + (i * 22);
+        motor_option_labels[i] = lv_label_create(screens[SCREEN_MOTOR]);
+        lv_label_set_text(motor_option_labels[i], motorNames[i]);
+        lv_obj_set_style_text_font(motor_option_labels[i], &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_color(motor_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+        lv_obj_set_pos(motor_option_labels[i], positions[i][0], positions[i][1]);
         
-        if (i == currentMotor) {
-            // Current selection - highlighted
-            M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-            M5.Display.drawString(String("► ") + motorNames[i], SCREEN_CENTER_X, y);
+        // Indicator LED
+        motor_indicators[i] = lv_obj_create(screens[SCREEN_MOTOR]);
+        lv_obj_set_size(motor_indicators[i], 8, 8);
+        lv_obj_set_style_radius(motor_indicators[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(motor_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 3), 0);
+        lv_obj_set_style_border_width(motor_indicators[i], 0, 0);
+        lv_obj_set_pos(motor_indicators[i], positions[i][0] - 15, positions[i][1] + 5);
+    }
+    
+    // Instruction
+    lv_obj_t* inst = lv_label_create(screens[SCREEN_MOTOR]);
+    lv_label_set_text(inst, "Rotate to change");
+    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(inst, LV_ALIGN_CENTER, 0, 30);
+}
+
+// ============================================================================
+// REGEN SCREEN - Regenerative braking adjustment
+// ============================================================================
+
+void UIManager::createRegenScreen() {
+    screens[SCREEN_REGEN] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_REGEN], lv_color_black(), 0);
+    
+    // Title
+    regen_title_label = lv_label_create(screens[SCREEN_REGEN]);
+    lv_label_set_text(regen_title_label, "REGEN MAX");
+    lv_obj_set_style_text_font(regen_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(regen_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(regen_title_label, LV_ALIGN_TOP_MID, 0, 5);
+    
+    // Regen arc (large, centered)
+    regen_arc = lv_arc_create(screens[SCREEN_REGEN]);
+    lv_obj_set_size(regen_arc, 180, 180);
+    lv_obj_center(regen_arc);
+    lv_arc_set_rotation(regen_arc, 135);
+    lv_arc_set_bg_angles(regen_arc, 0, 270);
+    lv_arc_set_value(regen_arc, 0);
+    lv_arc_set_range(regen_arc, -35, 0);  // -35% to 0%
+    lv_obj_set_style_arc_width(regen_arc, 12, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(regen_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(regen_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(regen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+    lv_obj_remove_style(regen_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(regen_arc, LV_OBJ_FLAG_CLICKABLE);
+    
+    // Regen value (center)
+    regen_value_label = lv_label_create(screens[SCREEN_REGEN]);
+    lv_label_set_text(regen_value_label, "0%");
+    lv_obj_set_style_text_font(regen_value_label, &lv_font_montserrat_40, 0);  // Larger for clarity
+    lv_obj_set_style_text_color(regen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(regen_value_label, LV_ALIGN_CENTER, 0, 0);
+    
+    // Instruction
+    lv_obj_t* inst = lv_label_create(screens[SCREEN_REGEN]);
+    lv_label_set_text(inst, "Rotate to adjust\n-35% to 0%");
+    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
+// ============================================================================
+// WIFI SCREEN - WiFi status and connection info
+// ============================================================================
+
+void UIManager::createWiFiScreen() {
+    screens[SCREEN_WIFI] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_WIFI], lv_color_black(), 0);
+    
+    // Title
+    lv_obj_t* title = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(title, "WiFi CONFIG");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+    
+    // Status
+    wifi_status_label = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(wifi_status_label, "Status: Inactive");
+    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(wifi_status_label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(wifi_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(wifi_status_label, LV_ALIGN_TOP_MID, 0, 40);
+    
+    // SSID
+    wifi_ssid_label = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(wifi_ssid_label, "SSID:\nZombieVerter-Display");
+    lv_obj_set_style_text_font(wifi_ssid_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(wifi_ssid_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(wifi_ssid_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(wifi_ssid_label, LV_ALIGN_CENTER, 0, -20);
+    
+    // Password
+    wifi_password_label = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(wifi_password_label, "Password:\nzombieverter");
+    lv_obj_set_style_text_font(wifi_password_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(wifi_password_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(wifi_password_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(wifi_password_label, LV_ALIGN_CENTER, 0, 20);
+    
+    // IP Address
+    wifi_ip_label = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(wifi_ip_label, "IP: ---");
+    lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(wifi_ip_label, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_obj_align(wifi_ip_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+    
+    // Instruction
+    lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
+    lv_label_set_text(inst, "Hold button to activate");
+    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+// ============================================================================
+// SETTINGS SCREEN - System information
+// ============================================================================
+
+void UIManager::createSettingsScreen() {
+    screens[SCREEN_SETTINGS] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_SETTINGS], lv_color_black(), 0);
+    
+    // Title
+    lv_obj_t* title = lv_label_create(screens[SCREEN_SETTINGS]);
+    lv_label_set_text(title, "SYSTEM INFO");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(title, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+    
+    // CAN status
+    settings_can_status_label = lv_label_create(screens[SCREEN_SETTINGS]);
+    lv_label_set_text(settings_can_status_label, "CAN: Connected");
+    lv_obj_set_style_text_font(settings_can_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(settings_can_status_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(settings_can_status_label, LV_ALIGN_TOP_MID, 0, 50);
+    
+    // Parameter count
+    settings_param_count_label = lv_label_create(screens[SCREEN_SETTINGS]);
+    lv_label_set_text(settings_param_count_label, "Parameters: 0");
+    lv_obj_set_style_text_font(settings_param_count_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(settings_param_count_label, lv_color_white(), 0);
+    lv_obj_align(settings_param_count_label, LV_ALIGN_CENTER, 0, -10);
+    
+    // Version
+    settings_version_label = lv_label_create(screens[SCREEN_SETTINGS]);
+    lv_label_set_text(settings_version_label, "Version: 1.1.0\nLVGL UI");
+    lv_obj_set_style_text_font(settings_version_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(settings_version_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(settings_version_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(settings_version_label, LV_ALIGN_CENTER, 0, 30);
+    
+    // Hardware info
+    lv_obj_t* hw_info = lv_label_create(screens[SCREEN_SETTINGS]);
+    lv_label_set_text(hw_info, "M5Stack Dial\nESP32-S3");
+    lv_obj_set_style_text_font(hw_info, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hw_info, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_set_style_text_align(hw_info, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(hw_info, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+// Continue to Part 3 for update functions...
+/**
+ * Complete UIManager.cpp Implementation - Part 3
+ * Update functions for all screens with real CAN data
+ */
+
+// ============================================================================
+// UPDATE FUNCTIONS - Connect CAN data to LVGL widgets
+// ============================================================================
+
+void UIManager::updateDashboard() {
+    if (!canManager) return;
+    
+    // Update RPM (divide by 100 for x100 scale)
+    CANParameter* rpm = canManager->getParameter(1);  // Motor RPM
+    if (rpm) {
+        int32_t value = rpm->getValueAsInt() / 100;  // Convert to x100 scale
+        lv_meter_set_indicator_value(dash_rpm_meter, dash_rpm_needle, value);
+        lv_meter_set_indicator_end_value(dash_rpm_meter, dash_rpm_arc, value);
+    }
+    
+    // Update voltage
+    CANParameter* voltage = canManager->getParameter(3);  // DC Voltage
+    if (voltage) {
+        int32_t value = voltage->getValueAsInt();  // Already in volts
+        lv_label_set_text_fmt(dash_voltage_label, "%dV", value);
+    }
+    
+    // Update power
+    CANParameter* power = canManager->getParameter(2);  // Power
+    if (power) {
+        int32_t value = power->getValueAsInt();  // in 0.1kW
+        lv_label_set_text_fmt(dash_power_label, "%d.%dkW", value / 10, abs(value % 10));
+    }
+    
+    // Update SOC ring
+    CANParameter* soc = canManager->getParameter(7);  // SOC
+    if (soc) {
+        int32_t value = soc->getValueAsInt();
+        lv_arc_set_value(dash_soc_arc, value);
+        
+        // Color code based on SOC
+        if (value > 80) {
+            lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+        } else if (value > 20) {
+            lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
         } else {
-            // Other options - dimmed
-            M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-            M5.Display.drawString(String("  ") + motorNames[i], SCREEN_CENTER_X, y);
+            lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+        }
+    }
+}
+
+void UIManager::updatePower() {
+    if (!canManager) return;
+    
+    // Update power meter
+    CANParameter* power = canManager->getParameter(2);
+    if (power) {
+        int32_t value = power->getValueAsInt();  // in 0.1kW
+        
+        lv_meter_set_indicator_value(power_meter, power_needle, value);
+        
+        // Update active arc
+        if (value >= 0) {
+            lv_meter_set_indicator_start_value(power_meter, power_arc, 0);
+            lv_meter_set_indicator_end_value(power_meter, power_arc, value);
+        } else {
+            lv_meter_set_indicator_start_value(power_meter, power_arc, value);
+            lv_meter_set_indicator_end_value(power_meter, power_arc, 0);
+        }
+        
+        // Update label
+        lv_label_set_text_fmt(power_label, "%d.%d", value / 10, abs(value % 10));
+        
+        // Color code
+        if (value < 0) {
+            lv_obj_set_style_text_color(power_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (value < 500) {
+            lv_obj_set_style_text_color(power_label, lv_palette_main(LV_PALETTE_CYAN), 0);
+        } else if (value < 1000) {
+            lv_obj_set_style_text_color(power_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_text_color(power_label, lv_palette_main(LV_PALETTE_RED), 0);
         }
     }
     
-    // Instructions
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString("Rotate=adjust | Click=next", SCREEN_CENTER_X, SCREEN_HEIGHT - 3);
+    // Update voltage
+    CANParameter* voltage = canManager->getParameter(3);
+    if (voltage) {
+        int32_t value = voltage->getValueAsInt();
+        lv_label_set_text_fmt(power_voltage_label, "%d.%dV", value / 10, abs(value % 10));
+    }
+    
+    // Update current
+    CANParameter* current = canManager->getParameter(4);
+    if (current) {
+        int32_t value = current->getValueAsInt();
+        lv_label_set_text_fmt(power_current_label, "%d.%dA", value / 10, abs(value % 10));
+    }
+    
+    // Update SOC
+    CANParameter* soc = canManager->getParameter(7);
+    if (soc) {
+        int32_t value = soc->getValueAsInt();
+        lv_label_set_text_fmt(power_soc_label, "SOC: %d%%", value);
+        
+        if (value > 80) {
+            lv_obj_set_style_text_color(power_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (value > 20) {
+            lv_obj_set_style_text_color(power_soc_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_text_color(power_soc_label, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+    }
 }
 
-void UIManager::drawRegen() {
-    clearScreen();
+void UIManager::updateTemperature() {
+    if (!canManager) return;
     
-    CANParameter* regen = canManager->getParameter(61);
+    // Update motor temp
+    CANParameter* motorTemp = canManager->getParameter(5);
+    if (motorTemp) {
+        int32_t value = motorTemp->getValueAsInt();
+        lv_arc_set_value(temp_motor_arc, value);
+        lv_label_set_text_fmt(temp_motor_label, "Motor\n%d°C", value);
+        
+        // Color code
+        if (value < 60) {
+            lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (value < 80) {
+            lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+    }
+    
+    // Update inverter temp
+    CANParameter* invTemp = canManager->getParameter(6);
+    if (invTemp) {
+        int32_t value = invTemp->getValueAsInt();
+        lv_arc_set_value(temp_inverter_arc, value);
+        lv_label_set_text_fmt(temp_inverter_label, "Inverter\n%d°C", value);
+        
+        // Color code
+        if (value < 60) {
+            lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (value < 80) {
+            lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+    }
+    
+    // Update battery temp (if available)
+    CANParameter* batTemp = canManager->getParameter(14);  // Shunt temperature
+    if (batTemp) {
+        int32_t value = batTemp->getValueAsInt();
+        lv_label_set_text_fmt(temp_battery_label, "Battery: %d°C", value / 10);
+    }
+}
+
+void UIManager::updateBattery() {
+    if (!canManager) return;
+    
+    // Update SOC
+    CANParameter* soc = canManager->getParameter(7);
+    if (soc) {
+        int32_t value = soc->getValueAsInt();
+        lv_meter_set_indicator_value(battery_soc_meter, battery_soc_needle, value);
+        lv_meter_set_indicator_end_value(battery_soc_meter, battery_soc_arc, value);
+        lv_label_set_text_fmt(battery_soc_label, "%d", value);
+        
+        // Color code
+        if (value > 80) {
+            lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+        } else if (value > 20) {
+            lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+        } else {
+            lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_RED), 0);
+            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+        }
+    }
+    
+    // Update voltage
+    CANParameter* voltage = canManager->getParameter(3);
+    if (voltage) {
+        int32_t value = voltage->getValueAsInt();
+        lv_label_set_text_fmt(battery_voltage_label, "Voltage: %dV", value);
+    }
+    
+    // Update current
+    CANParameter* current = canManager->getParameter(4);
+    if (current) {
+        int32_t value = current->getValueAsInt();
+        lv_label_set_text_fmt(battery_current_label, "Current: %d.%dA", value / 10, abs(value % 10));
+    }
+    
+    // Update temperature
+    CANParameter* temp = canManager->getParameter(14);
+    if (temp) {
+        int32_t value = temp->getValueAsInt();
+        lv_label_set_text_fmt(battery_temp_label, "Temp: %d°C", value / 10);
+    }
+}
+
+void UIManager::updateBMS() {
+    if (!canManager) return;
+    
+    // Update cell voltages (if BMS data available)
+    // These would come from BMS CAN messages (0x373, etc.)
+    // For now, show static text since BMS integration is optional
+    
+    // Update SOC bar
+    CANParameter* soc = canManager->getParameter(7);
+    if (soc) {
+        int32_t value = soc->getValueAsInt();
+        lv_bar_set_value(bms_soc_bar, value, LV_ANIM_ON);
+    }
+}
+
+void UIManager::updateGear() {
+    if (!canManager) return;
+    
+    CANParameter* gear = canManager->getParameter(27);  // Gear parameter
+    if (gear) {
+        int32_t value = gear->getValueAsInt();
+        const char* gearNames[] = {"LOW", "HIGH", "AUTO", "HI/LO"};
+        
+        if (value >= 0 && value < 4) {
+            lv_label_set_text(gear_current_label, gearNames[value]);
+            
+            // Update indicators
+            for (int i = 0; i < 4; i++) {
+                if (i == value) {
+                    lv_obj_set_style_bg_color(gear_indicators[i], lv_palette_main(LV_PALETTE_CYAN), 0);
+                    lv_obj_set_style_text_color(gear_option_labels[i], lv_color_white(), 0);
+                } else {
+                    lv_obj_set_style_bg_color(gear_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 3), 0);
+                    lv_obj_set_style_text_color(gear_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+                }
+            }
+        }
+    }
+}
+
+void UIManager::updateMotor() {
+    if (!canManager) return;
+    
+    CANParameter* motor = canManager->getParameter(129);  // Motor Active parameter
+    if (motor) {
+        int32_t value = motor->getValueAsInt();
+        const char* motorNames[] = {"MG1 only", "MG2 only", "MG1+MG2", "Blended"};
+        
+        if (value >= 0 && value < 4) {
+            lv_label_set_text(motor_current_label, motorNames[value]);
+            
+            // Update indicators
+            for (int i = 0; i < 4; i++) {
+                if (i == value) {
+                    lv_obj_set_style_bg_color(motor_indicators[i], lv_palette_main(LV_PALETTE_ORANGE), 0);
+                    lv_obj_set_style_text_color(motor_option_labels[i], lv_color_white(), 0);
+                } else {
+                    lv_obj_set_style_bg_color(motor_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 3), 0);
+                    lv_obj_set_style_text_color(motor_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+                }
+            }
+        }
+    }
+}
+
+void UIManager::updateRegen() {
+    if (!canManager) return;
+    
+    CANParameter* regen = canManager->getParameter(61);  // Regen Max parameter
+    if (regen) {
+        int32_t value = regen->getValueAsInt();  // -35 to 0
+        lv_arc_set_value(regen_arc, value);
+        lv_label_set_text_fmt(regen_value_label, "%d%%", value);
+        
+        // Color code based on how much regen
+        int absValue = abs(value);
+        if (absValue > 25) {
+            lv_obj_set_style_arc_color(regen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(regen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (absValue > 10) {
+            lv_obj_set_style_arc_color(regen_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(regen_value_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_arc_color(regen_arc, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(regen_value_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+        }
+    }
+}
+
+// WiFi and Settings screens don't need real-time updates
+// They update on screen entry or when WiFi state changes
+
+// ============================================================================
+// EDIT MODE CONTROL - For programmable screens
+// ============================================================================
+
+void UIManager::toggleEditMode() {
+    if (isEditableScreen()) {
+        editMode = !editMode;
+        
+        // Visual feedback - change title color when in edit mode
+        lv_obj_t* screen = screens[currentScreen];
+        if (screen) {
+            // Find the title label (first child)
+            lv_obj_t* title = lv_obj_get_child(screen, 0);
+            if (title) {
+                if (editMode) {
+                    // Edit mode - bright orange title
+                    lv_obj_set_style_text_color(title, lv_palette_main(LV_PALETTE_ORANGE), 0);
+                } else {
+                    // Normal mode - white title
+                    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+                }
+            }
+        }
+    }
+}
+
+bool UIManager::isEditableScreen() {
+    return (currentScreen == SCREEN_GEAR || 
+            currentScreen == SCREEN_MOTOR || 
+            currentScreen == SCREEN_REGEN);
+}
+
+// ============================================================================
+// LOCK SCREEN - Immobilizer UI
+// ============================================================================
+
+void UIManager::createLockScreen() {
+    screens[SCREEN_LOCK] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_LOCK], lv_color_black(), 0);
+    
+    // Lock icon (large padlock symbol)
+    lock_icon = lv_label_create(screens[SCREEN_LOCK]);
+    lv_label_set_text(lock_icon, "\xEF\x80\xA3");  // Unicode padlock (Font Awesome)
+    lv_obj_set_style_text_font(lock_icon, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_align(lock_icon, LV_ALIGN_CENTER, 0, -60);
     
     // Title
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("REGEN", SCREEN_CENTER_X, 20);
+    lock_title_label = lv_label_create(screens[SCREEN_LOCK]);
+    lv_label_set_text(lock_title_label, "VEHICLE LOCKED");
+    lv_obj_set_style_text_font(lock_title_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_align(lock_title_label, LV_ALIGN_CENTER, 0, -10);
     
-    if (!regen) {
-        M5.Display.setTextSize(2);
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("NO DATA", SCREEN_CENTER_X, SCREEN_CENTER_Y);
-        return;
+    // PIN display
+    lock_pin_display = lv_label_create(screens[SCREEN_LOCK]);
+    lv_label_set_text(lock_pin_display, "_ _ _ _");
+    lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(lock_pin_display, lv_color_white(), 0);
+    lv_obj_align(lock_pin_display, LV_ALIGN_CENTER, 0, 30);
+    
+    // Current digit
+    lock_digit_label = lv_label_create(screens[SCREEN_LOCK]);
+    lv_label_set_text(lock_digit_label, "0");
+    lv_obj_set_style_text_font(lock_digit_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_color(lock_digit_label, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_obj_align(lock_digit_label, LV_ALIGN_CENTER, 0, 75);
+    
+    // Instruction
+    lock_instruction_label = lv_label_create(screens[SCREEN_LOCK]);
+    lv_label_set_text(lock_instruction_label, "Rotate: Select  |  Click: Enter");
+    lv_obj_set_style_text_font(lock_instruction_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lock_instruction_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(lock_instruction_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+}
+
+void UIManager::updateLockScreen() {
+    if (!immobilizer) return;
+    
+    // Update PIN display
+    uint8_t pinPos = immobilizer->getPINPosition();
+    char pinDisplay[16];
+    
+    for (int i = 0; i < 4; i++) {
+        if (i < pinPos) {
+            pinDisplay[i * 2] = '*';
+        } else {
+            pinDisplay[i * 2] = '_';
+        }
+        pinDisplay[i * 2 + 1] = ' ';
     }
+    pinDisplay[7] = '\0';
     
-    int32_t currentRegen = regen->getValueAsInt();
+    lv_label_set_text(lock_pin_display, pinDisplay);
+    lv_label_set_text_fmt(lock_digit_label, "%d", immobilizer->getCurrentDigit());
     
-    // Display current value - LARGE
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-    M5.Display.drawString("Braking:", SCREEN_CENTER_X, 60);
-    
-    M5.Display.setTextSize(6);
-    M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-    char valueStr[8];
-    snprintf(valueStr, sizeof(valueStr), "%d", currentRegen);
-    M5.Display.drawString(valueStr, SCREEN_CENTER_X, SCREEN_CENTER_Y - 20);
-    
-    M5.Display.setTextSize(3);
-    M5.Display.setTextColor(TFT_CYAN, TFT_BLACK);
-    M5.Display.drawString("%", SCREEN_CENTER_X, SCREEN_CENTER_Y + 30);
-    
-    // Draw horizontal slider bar
-    int16_t barWidth = 180;
-    int16_t barHeight = 20;
-    int16_t barX = (SCREEN_WIDTH - barWidth) / 2;
-    int16_t barY = SCREEN_CENTER_Y + 70;
-    
-    // Draw bar background
-    M5.Display.drawRect(barX, barY, barWidth, barHeight, TFT_DARKGREY);
-    
-    // Calculate position on bar (-35 to 0 maps to 0 to barWidth)
-    float percent = (float)(currentRegen - (-35)) / (0 - (-35));
-    int16_t fillWidth = barWidth * percent;
-    
-    // Draw filled portion
-    if (fillWidth > 0) {
-        M5.Display.fillRect(barX, barY, fillWidth, barHeight, TFT_GREEN);
-    }
-    
-    // Draw current position indicator
-    int16_t markerX = barX + fillWidth;
-    M5.Display.fillTriangle(
-        markerX - 5, barY - 5,
-        markerX + 5, barY - 5,
-        markerX, barY,
-        TFT_YELLOW
-    );
-    
-    // Show range labels
-    M5.Display.setTextSize(1);
-    M5.Display.setTextDatum(middle_left);
-    M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    M5.Display.drawString("-35", barX - 5, barY + barHeight / 2);
-    
-    M5.Display.setTextDatum(middle_right);
-    M5.Display.drawString("0", barX + barWidth + 5, barY + barHeight / 2);
-    
-    // Show intensity description
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextSize(2);
-    if (currentRegen <= -25) {
-        M5.Display.setTextColor(TFT_RED, TFT_BLACK);
-        M5.Display.drawString("STRONG", SCREEN_CENTER_X, barY + 35);
-    } else if (currentRegen <= -15) {
-        M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-        M5.Display.drawString("MEDIUM", SCREEN_CENTER_X, barY + 35);
-    } else if (currentRegen <= -5) {
-        M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-        M5.Display.drawString("LIGHT", SCREEN_CENTER_X, barY + 35);
+    if (immobilizer->isUnlocked()) {
+        lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
+        lv_label_set_text(lock_title_label, "UNLOCKED");
+        lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     } else {
-        M5.Display.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        M5.Display.drawString("MINIMAL", SCREEN_CENTER_X, barY + 35);
+        lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_label_set_text(lock_title_label, "VEHICLE LOCKED");
+        lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_RED), 0);
     }
-    
-    // Instructions
-    M5.Display.setTextSize(1);
-    M5.Display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    M5.Display.setTextDatum(bottom_center);
-    M5.Display.drawString("Rotate=adjust | Click=next", SCREEN_CENTER_X, SCREEN_HEIGHT - 3);
 }

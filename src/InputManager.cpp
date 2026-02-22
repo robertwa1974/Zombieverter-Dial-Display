@@ -46,9 +46,9 @@ void InputManager::update() {
     int32_t rawPosition = encoder.getCount();
     int32_t currentPosition = rawPosition / 4;  // Divide by 4 to get actual detent clicks
     
-    // Debug every 500ms
+    // Debug every 2 seconds (not 500ms)
     static uint32_t lastDebugTime = 0;
-    if (millis() - lastDebugTime > 500) {
+    if (millis() - lastDebugTime > 2000) {
         Serial.printf("[ENC] raw=%d divided=%d last=%d\n", rawPosition, currentPosition, lastEncoderPosition);
         lastDebugTime = millis();
     }
