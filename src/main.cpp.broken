@@ -1,0 +1,271 @@
+#include <M5Unified.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include <driver/twai.h>
+#include "oi_can.h"
+
+const char* ssid = "ZombieVerter-Display";
+const char* password = "zombieverter";
+
+WebServer server(80);
+bool wifiEnabled = false;
+
+void handleRoot();
+void handleParameters();
+void handleBMS();
+void handleCAN();
+void handleGetParams();
+void handleSetParam();
+void handleSaveFlash();
+void handleSendCAN();
+
+void setup() {
+    auto cfg = M5.config();
+    M5.begin(cfg);
+    Serial.begin(115200);
+    Serial.println("\n=== M5Dial v3.7 FINAL ===");
+    Serial.println("Simple Display Mode (LVGL disabled)");
+    
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[SPIFFS] Failed!");
+    } else {
+        Serial.println("[SPIFFS] OK");
+    }
+    
+    OICan::Init(3, OICan::Baud500k);
+    Serial.println("[CAN] Ready - v3.5 Hybrid Backend");
+    
+    // Simple text display
+    M5.Display.clear();
+    M5.Display.setTextSize(2);
+    M5.Display.setTextColor(WHITE);
+    M5.Display.setCursor(20, 60);
+    M5.Display.println("ZombieVerter");
+    M5.Display.setCursor(20, 90);
+    M5.Display.println("v3.7");
+    M5.Display.setCursor(20, 120);
+    M5.Display.println("Press button");
+    M5.Display.setCursor(20, 150);
+    M5.Display.println("for WiFi");
+    
+    Serial.println("\nPress button to toggle WiFi");
+    Serial.println("Web UI: parameters, BMS, CAN pages\n");
+}
+
+void loop() {
+    M5.update();
+    OICan::Loop();
+    
+    // Button toggles WiFi
+    if (M5.BtnA.wasPressed()) {
+        wifiEnabled = !wifiEnabled;
+        
+        if (wifiEnabled) {
+            Serial.println("[WIFI] Starting AP...");
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(ssid, password);
+            
+            server.on("/", HTTP_GET, handleRoot);
+            server.on("/parameters", HTTP_GET, handleParameters);
+            server.on("/bms", HTTP_GET, handleBMS);
+            server.on("/can", HTTP_GET, handleCAN);
+            server.on("/31398.json", HTTP_GET, []() {
+                File f = SPIFFS.open("/31398.json", "r");
+                if (f) { server.streamFile(f, "application/json"); f.close(); }
+            });
+            server.on("/api/params", HTTP_GET, handleGetParams);
+            server.on("/api/setparam", HTTP_POST, handleSetParam);
+            server.on("/api/save", HTTP_POST, handleSaveFlash);
+            server.on("/api/sendcan", HTTP_POST, handleSendCAN);
+            server.begin();
+            
+            IPAddress ip = WiFi.softAPIP();
+            Serial.print("[WIFI] AP Started - IP: ");
+            Serial.println(ip);
+            
+            // Update display
+            M5.Display.clear();
+            M5.Display.setTextSize(2);
+            M5.Display.setCursor(20, 60);
+            M5.Display.println("WiFi ACTIVE");
+            M5.Display.setCursor(20, 90);
+            M5.Display.println(ssid);
+            M5.Display.setCursor(20, 120);
+            M5.Display.print("IP: ");
+            M5.Display.println(ip);
+            M5.Display.setCursor(20, 150);
+            M5.Display.println("Press to stop");
+            
+        } else {
+            Serial.println("[WIFI] Stopping AP...");
+            server.stop();
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_OFF);
+            
+            // Update display
+            M5.Display.clear();
+            M5.Display.setTextSize(2);
+            M5.Display.setCursor(20, 60);
+            M5.Display.println("ZombieVerter");
+            M5.Display.setCursor(20, 90);
+            M5.Display.println("v3.7");
+            M5.Display.setCursor(20, 120);
+            M5.Display.println("WiFi OFF");
+            M5.Display.setCursor(20, 150);
+            M5.Display.println("Press to start");
+            
+            Serial.println("[WIFI] AP Stopped");
+        }
+    }
+    
+    if (wifiEnabled) server.handleClient();
+    delay(10);
+}
+
+void handleRoot() {
+    server.send(200, "text/html", R"(
+<!DOCTYPE html><html><head><title>ZombieVerter v3.7</title>
+<style>body{font-family:Arial;margin:20px;background:#f0f0f0}
+.nav{background:#333;padding:15px;margin:-20px -20px 20px}
+.nav a{color:white;text-decoration:none;margin-right:20px;font-weight:bold}
+.nav a:hover{color:#4CAF50}
+.container{background:white;padding:20px;border-radius:5px;max-width:800px;margin:0 auto}
+h1{color:#333;border-bottom:2px solid #4CAF50;padding-bottom:10px}
+.status{background:#e8f5e9;padding:15px;border-radius:5px;margin:20px 0}
+.status strong{color:#2e7d32}
+</style></head><body>
+<div class="nav">
+<a href="/">Home</a>
+<a href="/parameters">Parameters</a>
+<a href="/bms">BMS</a>
+<a href="/can">CAN</a>
+</div>
+<div class="container">
+<h1>ZombieVerter v3.7</h1>
+<div class="status">
+<strong>Backend:</strong> v3.5 Hybrid (Broadcast + SDO)<br>
+<strong>Display:</strong> Simple Text Mode<br>
+<strong>WiFi:</strong> 192.168.4.1<br>
+<strong>Status:</strong> Connected
+</div>
+<h2>Features</h2>
+<ul>
+<li><strong>Parameters:</strong> View/edit all 119 params + FW version</li>
+<li><strong>BMS Monitor:</strong> Real-time battery monitoring</li>
+<li><strong>CAN Trace:</strong> Live viewer + send messages</li>
+</ul>
+<h2>M5Dial Controls</h2>
+<ul>
+<li><strong>Press Button:</strong> Toggle WiFi on/off</li>
+</ul>
+</div>
+</body></html>
+)");
+}
+
+void handleParameters() {
+    File f = SPIFFS.open("/parameters.html", "r");
+    if (f) { server.streamFile(f, "text/html"); f.close(); }
+    else server.send(404, "text/plain", "parameters.html not found");
+}
+
+void handleBMS() {
+    File f = SPIFFS.open("/bms.html", "r");
+    if (f) { server.streamFile(f, "text/html"); f.close(); }
+    else server.send(404, "text/plain", "bms.html not found");
+}
+
+void handleCAN() {
+    File f = SPIFFS.open("/can.html", "r");
+    if (f) { server.streamFile(f, "text/html"); f.close(); }
+    else server.send(404, "text/plain", "can.html not found");
+}
+
+void handleGetParams() {
+    File file = SPIFFS.open("/31398.json", "r");
+    if (!file) {
+        server.send(500, "application/json", "{\"error\":\"No params\"}");
+        return;
+    }
+    
+    DynamicJsonDocument paramsDoc(32000);
+    deserializeJson(paramsDoc, file);
+    file.close();
+    
+    DynamicJsonDocument response(32000);
+    response["fw_version"] = String(OICan::GetValue("version"), 0);
+    JsonObject values = response.createNestedObject("values");
+    
+    for (JsonPair kv : paramsDoc.as<JsonObject>()) {
+        String name = kv.key().c_str();
+        JsonObject param = kv.value().as<JsonObject>();
+        bool isParam = param["isparam"] | false;
+        int canid = param["canid"] | 0;
+        
+        if (!isParam && canid != 0) {
+            values[name] = OICan::GetValue(name);
+        } else {
+            values[name] = param["value"] | 0.0;
+        }
+    }
+    
+    String json;
+    serializeJson(response, json);
+    server.send(200, "application/json", json);
+}
+
+void handleSetParam() {
+    Serial.println("[API] /api/setparam called");
+    
+    if (!server.hasArg("name") || !server.hasArg("value")) {
+        Serial.println("[API] ERROR: Missing name or value argument");
+        server.send(400, "text/plain", "Missing args");
+        return;
+    }
+    
+    String name = server.arg("name");
+    String valueStr = server.arg("value");
+    double value = valueStr.toDouble();
+    
+    Serial.print("[API] Setting parameter: ");
+    Serial.print(name);
+    Serial.print(" = ");
+    Serial.println(value);
+    
+    auto result = OICan::SetValue(name, value);
+    
+    Serial.print("[API] SetValue result: ");
+    Serial.println(result == OICan::Ok ? "OK" : "FAILED");
+    
+    server.send(result == OICan::Ok ? 200 : 500, "text/plain", result == OICan::Ok ? "OK" : "Failed");
+}
+
+void handleSaveFlash() {
+    server.send(OICan::SaveToFlash() ? 200 : 500, "text/plain", 
+                OICan::SaveToFlash() ? "Saved" : "Failed");
+}
+
+void handleSendCAN() {
+    if (!server.hasArg("id") || !server.hasArg("data")) {
+        server.send(400, "text/plain", "Missing args");
+        return;
+    }
+    
+    uint32_t canId = strtoul(server.arg("id").c_str(), NULL, 16);
+    String dataHex = server.arg("data");
+    uint8_t data[8] = {0};
+    int len = 0;
+    for (int i = 0; i < dataHex.length() && len < 8; i += 2) {
+        data[len++] = strtoul(dataHex.substring(i, i+2).c_str(), NULL, 16);
+    }
+    
+    twai_message_t msg = {};
+    msg.identifier = canId;
+    msg.data_length_code = len;
+    memcpy(msg.data, data, len);
+    
+    server.send(twai_transmit(&msg, pdMS_TO_TICKS(100)) == ESP_OK ? 200 : 500, 
+                "text/plain", "Sent");
+}
