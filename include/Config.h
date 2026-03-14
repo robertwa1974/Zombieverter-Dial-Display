@@ -49,7 +49,7 @@
 #define WEB_SERVER_PORT     80
 
 // File Upload
-#define MAX_JSON_SIZE       16384  // 16KB - enough for large param files
+#define MAX_JSON_SIZE       65536  // 64KB - enough for large param files
 
 // ============================================
 // Application Configuration
@@ -66,7 +66,7 @@
 #define SLEEP_TIMEOUT_MS    300000  // 5 minutes
 
 // Data Settings
-#define MAX_PARAMETERS      64
+#define MAX_PARAMETERS      200
 #define TX_QUEUE_SIZE       16
 #define RX_QUEUE_SIZE       32
 #define PARAM_UPDATE_INTERVAL_MS  100

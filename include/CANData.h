@@ -4,52 +4,20 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include "Config.h"
+#include "SDOManager.h"
 
-// CAN Parameter data types
-enum ParamDataType {
-    PARAM_INT8,
-    PARAM_UINT8,
-    PARAM_INT16,
-    PARAM_UINT16,
-    PARAM_INT32,
-    PARAM_UINT32,
-    PARAM_FLOAT
-};
-
-// CAN Parameter structure
+// CAN Parameter structure — minimal for RAM efficiency
+// Metadata (unit, category, min, max, default) is served from params.json directly
 struct CANParameter {
-    uint16_t id;
-    char name[32];
-    ParamDataType dataType;
+    uint16_t id;       // VCU id (may be 2000+ for spot values)
+    char name[32];     // parameter name for lookup by cmdGet
+    bool editable;     // true = writable parameter
     
-    union {
-        int8_t i8;
-        uint8_t u8;
-        int16_t i16;
-        uint16_t u16;
-        int32_t i32;
-        uint32_t u32;
-        float f32;
-    } value;
-    
-    bool editable;
-    int32_t minValue;
-    int32_t maxValue;
-    
-    char unit[8];
-    uint8_t decimalPlaces;
-    
+    int32_t valueInt;  // current live value (integer scaled)
     uint32_t lastUpdateTime;
-    bool dirty;
     
-    // Get value as string
-    void toString(char* buffer, size_t bufferSize);
-    
-    // Set value from int32
-    void setValue(int32_t val);
-    
-    // Get value as int32
-    int32_t getValueAsInt();
+    void setValue(int32_t val) { valueInt = val; lastUpdateTime = millis(); }
+    int32_t getValueAsInt() { return valueInt; }
 };
 
 // CAN Message structure
@@ -70,7 +38,8 @@ public:
     
     // Parameter management
     bool loadParametersFromJSON(const char* jsonString);
-    CANParameter* getParameter(uint16_t id);
+    CANParameter* getParameter(uint16_t id);          // lookup by VCU id
+    CANParameter* getParameterByName(const char* name); // lookup by name
     CANParameter* getParameterByIndex(uint8_t index);
     uint16_t getParameterCount() { return parameterCount; }
     
@@ -79,19 +48,36 @@ public:
     void setParameter(uint16_t paramId, int32_t value);
     bool sendMessage(uint32_t id, uint8_t* data, uint8_t length);
     
+    // Save all parameters to VCU flash
+    void saveToFlash() { sdoManager.requestSaveFlash(); }
+    
     // Connection status
     bool isConnected() { return connected; }
     uint32_t getLastMessageTime() { return lastMessageTime; }
     
     // BMS cell voltage access
-    uint16_t getCellVoltage(uint8_t cellIndex);  // Returns voltage in mV
+    uint16_t getCellVoltage(uint8_t cellIndex);
     uint8_t getCellCount() { return bmsCellCount; }
     uint32_t getCellLastUpdate(uint8_t cellIndex);
-    
+
+    // SDO statistics (for settings screen)
+    uint32_t getSDOSuccessCount()  { return sdoManager.getSuccessCount(); }
+    uint32_t getSDOFailureCount()  { return sdoManager.getFailureCount(); }
+    uint32_t getSDOTimeoutCount()  { return sdoManager.getTimeoutCount(); }
+
 private:
     CANParameter parameters[MAX_PARAMETERS];
     uint16_t parameterCount;
-    
+
+    // Async SDO manager
+    SDOManager sdoManager;
+
+    // Static callback — SDOManager calls this when a read completes
+    static void onSDOResult(const SDOResult& result);
+
+    // Pointer to self so the static callback can reach instance data
+    static CANDataManager* instance;
+
     CANMessage txQueue[TX_QUEUE_SIZE];
     CANMessage rxQueue[RX_QUEUE_SIZE];
     uint8_t txHead, txTail;
@@ -100,20 +86,22 @@ private:
     bool connected;
     uint32_t lastMessageTime;
     
-    // BMS cell voltage storage (up to 96 cells = 16 modules * 6 cells)
     static const uint8_t MAX_BMS_CELLS = 96;
-    uint16_t bmsCellVoltages[MAX_BMS_CELLS];     // Voltages in mV
-    uint32_t bmsCellUpdateTimes[MAX_BMS_CELLS];  // Last update timestamp
-    uint8_t bmsCellCount;                         // Actual number of cells detected
+    uint16_t bmsCellVoltages[MAX_BMS_CELLS];
+    uint32_t bmsCellUpdateTimes[MAX_BMS_CELLS];
+    uint8_t bmsCellCount;
     
     void processReceivedMessage(CANMessage& msg);
     void handleSDOResponse(CANMessage& msg);
     void handlePDOMessage(CANMessage& msg);
     void handleGenericMessage(CANMessage& msg);
     void handleBMSCellVoltage(CANMessage& msg);
+
+    // Update by SDO short id (1-999) or name mapping
+    void updateParameterBySDOId(uint16_t sdoId, int32_t value);
+    // Legacy alias
     void updateParameterIfExists(uint16_t paramId, int32_t value);
     
-    // Queue management
     bool enqueueTx(CANMessage& msg);
     bool dequeueTx(CANMessage& msg);
     bool enqueueRx(CANMessage& msg);

@@ -1,551 +1,520 @@
+// =============================================================================
+// WiFiManager.cpp — ZombieVerter Dial Display
+//
+// Implements the openinverter/jamiejones85 esp32-web-interface API surface so
+// the existing HTML/JS/CSS web assets work without modification.
+//
+// The original firmware routes /cmd over UART to a separate MCU.
+// This implementation routes the same /cmd calls to CANDataManager,
+// which reads/writes parameters via SDO over CAN.
+//
+// Uses ESPAsyncWebServer for reliable concurrent file serving from SPIFFS.
+// =============================================================================
+
 #include "WiFiManager.h"
+#include "CANData.h"
 #include "Config.h"
+
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <ESPAsyncWebServer.h>
+#include <Update.h>
 #include <SPIFFS.h>
+#include <FS.h>
 
-WiFiManager* WiFiManager::instance = nullptr;
+// ---------------------------------------------------------------------------
+// Module-level server instance
+// ---------------------------------------------------------------------------
+static AsyncWebServer* server = nullptr;
+static WiFiManager* instance = nullptr;
 
-WiFiManager::WiFiManager() 
-    : server(nullptr), canManager(nullptr), apMode(false), serverRunning(false) {
+// ---------------------------------------------------------------------------
+// Constructor
+// ---------------------------------------------------------------------------
+WiFiManager::WiFiManager()
+    : can(nullptr), active(false), serverStarted(false)
+{
     instance = this;
 }
 
-bool WiFiManager::init(CANDataManager* canMgr) {
-    canManager = canMgr;
-    
-    // Make sure WiFi is completely off initially (like the working test)
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(500);
-    
-    #if DEBUG_SERIAL
-    Serial.println("WiFi Manager initialized (WiFi off)");
-    #endif
-    
-    // Initialize SPIFFS with format on failure
-    if (!SPIFFS.begin(false)) {
-        #if DEBUG_SERIAL
-        Serial.println("SPIFFS mount failed, formatting...");
-        #endif
-        
-        // Try formatting
-        if (!SPIFFS.format()) {
-            #if DEBUG_SERIAL
-            Serial.println("SPIFFS format failed!");
-            #endif
-            return false;
-        }
-        
-        // Try mounting again
-        if (!SPIFFS.begin(false)) {
-            #if DEBUG_SERIAL
-            Serial.println("SPIFFS mount failed after format");
-            #endif
-            return false;
-        }
+// ---------------------------------------------------------------------------
+// init — mounts SPIFFS, configures AP, registers routes
+// ---------------------------------------------------------------------------
+bool WiFiManager::init(CANDataManager* canManager) {
+    can = canManager;
+
+    if (!SPIFFS.begin(true)) {
+        Serial.println("[WiFi] SPIFFS mount failed");
     }
-    
-    #if DEBUG_SERIAL
-    Serial.println("SPIFFS mounted");
-    Serial.printf("Total: %d bytes\n", SPIFFS.totalBytes());
-    Serial.printf("Used: %d bytes\n", SPIFFS.usedBytes());
-    #endif
-    
+
+    WiFi.mode(WIFI_OFF);
+    active = false;
+
+    Serial.println("[WiFi] Manager initialized (AP off at boot)");
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// startAP — bring up the access point and web server
+// ---------------------------------------------------------------------------
 void WiFiManager::startAP() {
-    #if DEBUG_SERIAL
-    Serial.println("\n=== WiFiManager::startAP() called ===");
-    #endif
-    
-    if (apMode) {
-        #if DEBUG_SERIAL
-        Serial.println("WiFi AP already running - skipping");
-        #endif
-        return;
-    }
-    
-    #if DEBUG_SERIAL
-    Serial.println("Step 1: Stopping any existing WiFi...");
-    #endif
-    
-    // Complete shutdown
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
-    delay(500);
-    
-    #if DEBUG_SERIAL
-    Serial.println("Step 2: Setting WiFi mode to AP...");
-    #endif
-    
-    // Set to AP mode
+    if (active) return;
+
     WiFi.mode(WIFI_AP);
-    delay(500);
-    
-    #if DEBUG_SERIAL
-    Serial.println("Step 3: Starting Access Point...");
-    Serial.print("  SSID: ");
-    Serial.println(WIFI_AP_SSID);
-    Serial.print("  Password: ");
-    Serial.println(WIFI_AP_PASSWORD);
-    Serial.print("  Channel: ");
-    Serial.println(WIFI_AP_CHANNEL);
-    #endif
-    
-    // Start AP with all parameters explicit
-    bool apStarted = WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD, WIFI_AP_CHANNEL, false, 4);
-    
-    #if DEBUG_SERIAL
-    Serial.print("Step 4: softAP() returned: ");
-    Serial.println(apStarted ? "TRUE" : "FALSE");
-    #endif
-    
-    if (!apStarted) {
-        #if DEBUG_SERIAL
-        Serial.println("✗✗✗ FAILED to start AP! ✗✗✗");
-        Serial.println("Possible causes:");
-        Serial.println("  - WiFi hardware issue");
-        Serial.println("  - Power supply insufficient");
-        Serial.println("  - ESP32 WiFi not initialized");
-        #endif
-        return;
+    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+
+    Serial.printf("[WiFi] AP started: %s / %s\n", WIFI_AP_SSID, WIFI_AP_PASSWORD);
+    Serial.printf("[WiFi] IP: %s\n", WiFi.softAPIP().toString().c_str());
+
+    if (MDNS.begin("inverter")) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.println("[WiFi] mDNS: http://inverter.local");
     }
-    
-    #if DEBUG_SERIAL
-    Serial.println("Step 5: Waiting for AP to fully start...");
-    #endif
-    delay(1000);
-    
-    IPAddress IP = WiFi.softAPIP();
-    
-    #if DEBUG_SERIAL
-    Serial.println("Step 6: AP Started Successfully!");
-    Serial.println("✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓");
-    Serial.print("IP Address: ");
-    Serial.println(IP);
-    Serial.print("WiFi Mode: ");
-    Serial.println(WiFi.getMode());
-    Serial.print("MAC Address: ");
-    Serial.println(WiFi.softAPmacAddress());
-    Serial.println("✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓✓");
-    #endif
-    
-    apMode = true;
-    
-    // Start web server
-    if (!server) {
-        #if DEBUG_SERIAL
-        Serial.println("Step 7: Starting web server...");
-        #endif
-        
-        server = new WebServer(WEB_SERVER_PORT);
-        
-        server->on("/", HTTP_GET, handleRootStatic);
-        server->on("/upload", HTTP_GET, handleUploadStatic);
-        server->on("/upload", HTTP_POST, []() {
-            instance->server->send(200);
-        }, handleFileUploadStatic);
-        server->on("/params", HTTP_GET, handleGetParamsStatic);
-        server->onNotFound(handleNotFoundStatic);
-        
-        server->begin();
-        serverRunning = true;
-        
-        #if DEBUG_SERIAL
-        Serial.print("✓ Web server started on port ");
-        Serial.println(WEB_SERVER_PORT);
-        Serial.println("=== WiFi AP FULLY READY ===\n");
-        #endif
-    }
+
+    startServer();
+    active = true;
 }
 
+// ---------------------------------------------------------------------------
+// stopAP
+// ---------------------------------------------------------------------------
 void WiFiManager::stopAP() {
-    if (!apMode) return;
-    
-    if (server && serverRunning) {
-        server->stop();
-        delete server;
-        server = nullptr;
-        serverRunning = false;
-    }
-    
+    if (!active) return;
+    stopServer();
+    MDNS.end();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
-    apMode = false;
-    
-    #if DEBUG_SERIAL
-    Serial.println("WiFi AP stopped");
-    #endif
+    active = false;
+    Serial.println("[WiFi] AP stopped");
 }
 
+// ---------------------------------------------------------------------------
+// update — no-op: ESPAsyncWebServer handles everything internally
+// ---------------------------------------------------------------------------
 void WiFiManager::update() {
-    if (server && serverRunning) {
-        server->handleClient();
-    }
+    // Intentionally empty — ESPAsyncWebServer is fully non-blocking
 }
 
+// ---------------------------------------------------------------------------
+// getIPAddress
+// ---------------------------------------------------------------------------
 String WiFiManager::getIPAddress() {
-    if (apMode) {
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA)
         return WiFi.softAPIP().toString();
-    } else if (isConnected()) {
-        return WiFi.localIP().toString();
+    return WiFi.localIP().toString();
+}
+
+// ---------------------------------------------------------------------------
+// startServer — register all routes
+// ---------------------------------------------------------------------------
+void WiFiManager::startServer() {
+    if (serverStarted) return;
+
+    server = new AsyncWebServer(80);
+
+    // -----------------------------------------------------------------------
+    // /cmd — the core API used by all web pages
+    // -----------------------------------------------------------------------
+    server->on("/cmd", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleCmd(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /wifi — GET returns settings page, POST updates credentials
+    // -----------------------------------------------------------------------
+    server->on("/wifi", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleWifiGet(request);
+    });
+
+    server->on("/wifi", HTTP_POST, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleWifiPost(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /list — SPIFFS file listing
+    // -----------------------------------------------------------------------
+    server->on("/list", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleFileList(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /edit DELETE — delete file from SPIFFS
+    // -----------------------------------------------------------------------
+    server->on("/edit", HTTP_DELETE, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleFileDelete(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /edit POST — upload file to SPIFFS
+    // -----------------------------------------------------------------------
+    server->on("/edit", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            request->send(200, "text/plain", "");
+        },
+        [](AsyncWebServerRequest* request, const String& filename,
+           size_t index, uint8_t* data, size_t len, bool final) {
+            if (!instance) return;
+            instance->handleFileUpload(request, filename, index, data, len, final);
+        }
+    );
+
+    // -----------------------------------------------------------------------
+    // /version
+    // -----------------------------------------------------------------------
+    server->on("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/plain", "ZVDisplay-1.0");
+    });
+
+    // -----------------------------------------------------------------------
+    // /update — OTA firmware update
+    // -----------------------------------------------------------------------
+    server->on("/update", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            request->send(Update.hasError() ? 500 : 200, "text/plain",
+                          Update.hasError() ? "Update FAILED" : "Update OK — rebooting");
+            delay(500);
+            ESP.restart();
+        },
+        [](AsyncWebServerRequest* request, const String& filename,
+           size_t index, uint8_t* data, size_t len, bool final) {
+            if (!instance) return;
+            instance->handleOTA(request, filename, index, data, len, final);
+        }
+    );
+
+    // -----------------------------------------------------------------------
+    // Catch-all — serve static files from SPIFFS (with .gz support)
+    // -----------------------------------------------------------------------
+    server->onNotFound([](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(404); return; }
+        if (!instance->serveFile(request)) {
+            request->send(404, "text/plain", "Not Found: " + request->url());
+        }
+    });
+
+    server->begin();
+    serverStarted = true;
+    Serial.println("[WiFi] Async web server started on port 80");
+}
+
+// ---------------------------------------------------------------------------
+// stopServer
+// ---------------------------------------------------------------------------
+void WiFiManager::stopServer() {
+    if (!serverStarted || !server) return;
+    server->end();
+    delete server;
+    server = nullptr;
+    serverStarted = false;
+}
+
+// ===========================================================================
+// Route handlers
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// /cmd
+// ---------------------------------------------------------------------------
+void WiFiManager::handleCmd(AsyncWebServerRequest* request) {
+    if (!request->hasParam("cmd")) {
+        request->send(400, "text/plain", "BAD ARGS");
+        return;
     }
-    return "Not connected";
-}
 
-// Web server handlers
-void WiFiManager::handleRoot() {
-    server->send(200, "text/html", generateIndexPage());
-}
+    String cmd = request->getParam("cmd")->value();
+    cmd.trim();
+    String response;
 
-void WiFiManager::handleUpload() {
-    server->send(200, "text/html", generateUploadPage());
-}
+    AsyncWebServerResponse* resp = nullptr;
 
-void WiFiManager::handleFileUpload() {
-    HTTPUpload& upload = server->upload();
-    static File uploadFile;
-    static size_t uploadSize = 0;
-    
-    if (upload.status == UPLOAD_FILE_START) {
-        #if DEBUG_SERIAL
-        Serial.printf("Upload start: %s\n", upload.filename.c_str());
-        #endif
-        
-        uploadSize = 0;
-        
-        // Delete old file if exists
-        if (SPIFFS.exists("/params.json")) {
-            SPIFFS.remove("/params.json");
+    if (cmd == "json") {
+        // Serve params.json directly from SPIFFS — fast, no heap allocation.
+        // The JS polls /cmd?cmd=get for live values after initial load.
+        if (!serveFile(request, "/params.json")) {
+            request->send(200, "text/json", "{}");
         }
-        
-        // Open file for writing
-        uploadFile = SPIFFS.open("/params.json", "w");
-        if (!uploadFile) {
-            #if DEBUG_SERIAL
-            Serial.println("Failed to open file for writing");
-            #endif
-        }
-        
-    } else if (upload.status == UPLOAD_FILE_WRITE) {
-        // Check size limit
-        if (uploadSize + upload.currentSize > MAX_JSON_SIZE) {
-            #if DEBUG_SERIAL
-            Serial.println("File too large!");
-            #endif
-            if (uploadFile) {
-                uploadFile.close();
-                SPIFFS.remove("/params.json");
-            }
-            server->sendHeader("Location", "/?error=2"); // Size error
-            server->send(303);
+        return;
+
+    } else if (cmd.startsWith("get ")) {
+        String names = cmd.substring(4);
+        names.trim();
+        response = cmdGet(names);
+        resp = request->beginResponse(200, "text/plain", response);
+
+    } else if (cmd.startsWith("set ")) {
+        String rest = cmd.substring(4);
+        rest.trim();
+        int spaceIdx = rest.indexOf(' ');
+        if (spaceIdx < 0) {
+            request->send(200, "text/plain", "0\n");
             return;
         }
-        
-        // Write chunk to file
-        if (uploadFile) {
-            uploadFile.write(upload.buf, upload.currentSize);
-            uploadSize += upload.currentSize;
-        }
-        
-    } else if (upload.status == UPLOAD_FILE_END) {
-        if (uploadFile) {
-            uploadFile.close();
-        }
-        
-        #if DEBUG_SERIAL
-        Serial.printf("Upload complete: %d bytes\n", uploadSize);
-        #endif
-        
-        // Validate and load parameters
-        File file = SPIFFS.open("/params.json", "r");
-        if (file) {
-            String jsonContent = file.readString();
-            file.close();
-            
-            // Basic JSON validation
-            if (jsonContent.length() == 0 || jsonContent.length() > MAX_JSON_SIZE) {
-                #if DEBUG_SERIAL
-                Serial.println("Invalid file size");
-                #endif
-                SPIFFS.remove("/params.json");
-                server->sendHeader("Location", "/?error=2");
-                server->send(303);
-                return;
-            }
-            
-            // Try to parse
-            if (canManager->loadParametersFromJSON(jsonContent.c_str())) {
-                #if DEBUG_SERIAL
-                Serial.println("Parameters loaded successfully");
-                #endif
-                
-                server->sendHeader("Location", "/?success=1");
-                server->send(303);
-            } else {
-                #if DEBUG_SERIAL
-                Serial.println("Failed to parse parameters");
-                #endif
-                
-                SPIFFS.remove("/params.json");
-                server->sendHeader("Location", "/?error=1");
-                server->send(303);
-            }
-        } else {
-            server->sendHeader("Location", "/?error=3");
-            server->send(303);
-        }
-    } else if (upload.status == UPLOAD_FILE_ABORTED) {
-        #if DEBUG_SERIAL
-        Serial.println("Upload aborted");
-        #endif
-        if (uploadFile) {
-            uploadFile.close();
-        }
-        SPIFFS.remove("/params.json");
-    }
-}
+        String name  = rest.substring(0, spaceIdx);
+        String value = rest.substring(spaceIdx + 1);
+        name.trim();
+        value.trim();
+        response = cmdSet(name, value);
+        resp = request->beginResponse(200, "text/plain", response);
 
-void WiFiManager::handleGetParams() {
-    File file = SPIFFS.open("/params.json", "r");
-    if (file) {
-        server->streamFile(file, "application/json");
-        file.close();
+    } else if (cmd == "save" || cmd == "load") {
+        resp = request->beginResponse(200, "text/plain", "1\n");
+
+    } else if (cmd == "errors") {
+        resp = request->beginResponse(200, "text/plain", "0\n");
+
     } else {
-        server->send(404, "text/plain", "No parameters file found");
+        resp = request->beginResponse(200, "text/plain", "1\n");
+    }
+
+    if (resp) {
+        resp->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(resp);
     }
 }
 
-void WiFiManager::handleNotFound() {
-    server->send(404, "text/plain", "404: Not found");
+// ---------------------------------------------------------------------------
+// cmdJson — not used, params.json served directly from SPIFFS
+// ---------------------------------------------------------------------------
+String WiFiManager::cmdJson() {
+    return "{}";
 }
 
-// Static callbacks
-void WiFiManager::handleRootStatic() {
-    if (instance) instance->handleRoot();
-}
+// ---------------------------------------------------------------------------
+// cmdGet
+// ---------------------------------------------------------------------------
+String WiFiManager::cmdGet(const String& names) {
+    if (!can) return "";
 
-void WiFiManager::handleUploadStatic() {
-    if (instance) instance->handleUpload();
-}
+    String response;
+    String nameList = names;
+    nameList.trim();
 
-void WiFiManager::handleFileUploadStatic() {
-    if (instance) instance->handleFileUpload();
-}
+    int start = 0;
+    while (start < (int)nameList.length()) {
+        int comma = nameList.indexOf(',', start);
+        String name;
+        if (comma < 0) {
+            name = nameList.substring(start);
+            start = nameList.length();
+        } else {
+            name = nameList.substring(start, comma);
+            start = comma + 1;
+        }
+        name.trim();
+        if (name.length() == 0) continue;
 
-void WiFiManager::handleGetParamsStatic() {
-    if (instance) instance->handleGetParams();
-}
+        CANParameter* param = nullptr;
+        for (uint16_t i = 0; i < can->getParameterCount(); i++) {
+            CANParameter* p = can->getParameterByIndex(i);
+            if (p && name.equals(p->name)) {
+                param = p;
+                break;
+            }
+        }
 
-void WiFiManager::handleNotFoundStatic() {
-    if (instance) instance->handleNotFound();
-}
-
-// HTML pages
-String WiFiManager::generateIndexPage() {
-    String html = R"(
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZombieVerter Display</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #1a1a1a;
-            color: #fff;
+        char valBuf[32];
+        if (param) {
+            snprintf(valBuf, sizeof(valBuf), "%.2f", (float)param->getValueAsInt());
+        } else {
+            snprintf(valBuf, sizeof(valBuf), "0.00");
         }
-        h1 {
-            color: #4CAF50;
-            text-align: center;
-        }
-        .card {
-            background: #2a2a2a;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        .button {
-            display: inline-block;
-            background: #4CAF50;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 5px;
-            text-decoration: none;
-            margin: 5px;
-            text-align: center;
-        }
-        .button:hover {
-            background: #45a049;
-        }
-        .info {
-            background: #333;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .success {
-            background: #4CAF50;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-        .error {
-            background: #f44336;
-            padding: 10px;
-            border-radius: 5px;
-            margin: 10px 0;
-        }
-    </style>
-</head>
-<body>
-    <h1>⚡ ZombieVerter Display</h1>
-    <div class="card">
-        <h2>Configuration Portal</h2>
-        <div class="info">
-            <strong>Device:</strong> M5Stack Dial<br>
-            <strong>IP Address:</strong> )";
-    
-    html += getIPAddress();
-    html += R"(<br>
-            <strong>Status:</strong> WiFi AP Mode
-        </div>
-    </div>
-)";
-
-    // Show success/error messages
-    if (server->hasArg("success")) {
-        html += R"(
-    <div class="success">
-        ✓ Parameters uploaded and loaded successfully!
-    </div>
-)";
+        response += valBuf;
+        response += "\n";
     }
-    
-    if (server->hasArg("error")) {
-        html += R"(
-    <div class="error">
-        ✗ Failed to parse parameters file. Please check JSON format.
-    </div>
-)";
+
+    return response;
+}
+
+// ---------------------------------------------------------------------------
+// cmdSet
+// ---------------------------------------------------------------------------
+String WiFiManager::cmdSet(const String& name, const String& value) {
+    if (!can) return "0\n";
+
+    for (uint16_t i = 0; i < can->getParameterCount(); i++) {
+        CANParameter* p = can->getParameterByIndex(i);
+        if (p && name.equals(p->name)) {
+            int32_t intVal = (int32_t)value.toFloat();
+            can->setParameter(p->id, intVal);
+            Serial.printf("[WiFi] Set %s = %d via web\n", p->name, intVal);
+            return "1\n";
+        }
     }
-    
-    html += R"(
-    <div class="card">
-        <h2>Upload Parameters</h2>
-        <p>Upload your ZombieVerter parameters JSON file:</p>
-        <a href="/upload" class="button">📤 Upload params.json</a>
-    </div>
-    
-    <div class="card">
-        <h2>Download Current Parameters</h2>
-        <p>Download the currently loaded parameters:</p>
-        <a href="/params" class="button" download="params.json">📥 Download params.json</a>
-    </div>
-    
-    <div class="card">
-        <h2>Instructions</h2>
-        <ol>
-            <li>Create or obtain your ZombieVerter parameters JSON file</li>
-            <li>Click "Upload params.json" above</li>
-            <li>Select your file and upload</li>
-            <li>The display will reload with your parameters</li>
-            <li>Turn off WiFi mode by long-pressing the button</li>
-        </ol>
-    </div>
-</body>
-</html>
-)";
-    
-    return html;
+
+    Serial.printf("[WiFi] Set: param '%s' not found\n", name.c_str());
+    return "0\n";
 }
 
-String WiFiManager::generateUploadPage() {
-    String html = R"(
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Parameters</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: #1a1a1a;
-            color: #fff;
-        }
-        h1 {
-            color: #4CAF50;
-            text-align: center;
-        }
-        .card {
-            background: #2a2a2a;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        input[type="file"] {
-            display: block;
-            width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            background: #333;
-            border: 2px solid #4CAF50;
-            border-radius: 5px;
-            color: #fff;
-        }
-        input[type="submit"] {
-            background: #4CAF50;
-            color: white;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            width: 100%;
-        }
-        input[type="submit"]:hover {
-            background: #45a049;
-        }
-        .button {
-            display: inline-block;
-            background: #666;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 5px;
-            text-decoration: none;
-            margin: 5px 0;
-        }
-        .button:hover {
-            background: #555;
-        }
-    </style>
-</head>
-<body>
-    <h1>📤 Upload Parameters</h1>
-    <div class="card">
-        <h2>Select params.json File</h2>
-        <form method="POST" action="/upload" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".json" required>
-            <input type="submit" value="Upload">
-        </form>
-    </div>
-    <div class="card">
-        <a href="/" class="button">← Back to Home</a>
-    </div>
-</body>
-</html>
-)";
-    
-    return html;
+// ---------------------------------------------------------------------------
+// /wifi GET
+// ---------------------------------------------------------------------------
+void WiFiManager::handleWifiGet(AsyncWebServerRequest* request) {
+    if (SPIFFS.exists("/wifi.html")) {
+        File f = SPIFFS.open("/wifi.html", "r");
+        String html = f.readString();
+        f.close();
+        html.replace("%apSSID%",  WiFi.softAPSSID());
+        html.replace("%staSSID%", WiFi.SSID());
+        html.replace("%staIP%",   WiFi.localIP().toString());
+        request->send(200, "text/html", html);
+    } else {
+        request->send(404, "text/plain", "wifi.html not found");
+    }
 }
 
+// ---------------------------------------------------------------------------
+// /wifi POST
+// ---------------------------------------------------------------------------
+void WiFiManager::handleWifiPost(AsyncWebServerRequest* request) {
+    if (request->hasParam("apSSID", true) && request->hasParam("apPW", true)) {
+        String ssid = request->getParam("apSSID", true)->value();
+        String pw   = request->getParam("apPW", true)->value();
+        if (ssid.length() > 0 && pw.length() >= 8) {
+            WiFi.softAP(ssid.c_str(), pw.c_str());
+            Serial.printf("[WiFi] AP credentials updated: %s\n", ssid.c_str());
+        }
+    } else if (request->hasParam("staSSID", true) && request->hasParam("staPW", true)) {
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.begin(request->getParam("staSSID", true)->value().c_str(),
+                   request->getParam("staPW", true)->value().c_str());
+        Serial.printf("[WiFi] STA connect attempt: %s\n",
+                      request->getParam("staSSID", true)->value().c_str());
+    }
+    serveFile(request, "/wifi-updated.html");
+}
+
+// ---------------------------------------------------------------------------
+// /list
+// ---------------------------------------------------------------------------
+void WiFiManager::handleFileList(AsyncWebServerRequest* request) {
+    File root = SPIFFS.open("/");
+    String output = "[";
+    File file = root.openNextFile();
+    while (file) {
+        if (output != "[") output += ",";
+        output += "{\"type\":\"file\",\"name\":\"";
+        output += String(file.name());
+        output += "\"}";
+        file = root.openNextFile();
+    }
+    output += "]";
+    request->send(200, "text/json", output);
+}
+
+// ---------------------------------------------------------------------------
+// /edit POST — file upload
+// ---------------------------------------------------------------------------
+void WiFiManager::handleFileUpload(AsyncWebServerRequest* request,
+                                    const String& filename,
+                                    size_t index, uint8_t* data,
+                                    size_t len, bool final) {
+    static File fsUploadFile;
+    String path = filename.startsWith("/") ? filename : "/" + filename;
+
+    if (index == 0) {
+        Serial.printf("[WiFi] Upload start: %s\n", path.c_str());
+        fsUploadFile = SPIFFS.open(path, "w");
+    }
+    if (fsUploadFile) {
+        fsUploadFile.write(data, len);
+    }
+    if (final) {
+        if (fsUploadFile) {
+            fsUploadFile.close();
+            Serial.printf("[WiFi] Upload complete: %u bytes\n", index + len);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// /edit DELETE
+// ---------------------------------------------------------------------------
+void WiFiManager::handleFileDelete(AsyncWebServerRequest* request) {
+    if (!request->hasParam("f")) {
+        request->send(400, "text/plain", "BAD ARGS");
+        return;
+    }
+    String path = request->getParam("f")->value();
+    if (!SPIFFS.exists(path)) {
+        request->send(404, "text/plain", "File not found");
+        return;
+    }
+    SPIFFS.remove(path);
+    Serial.printf("[WiFi] Deleted: %s\n", path.c_str());
+    request->send(200, "text/plain", "");
+}
+
+// ---------------------------------------------------------------------------
+// /update — OTA
+// ---------------------------------------------------------------------------
+void WiFiManager::handleOTA(AsyncWebServerRequest* request,
+                              const String& filename,
+                              size_t index, uint8_t* data,
+                              size_t len, bool final) {
+    if (index == 0) {
+        Serial.printf("[OTA] Update start: %s\n", filename.c_str());
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Update.printError(Serial);
+        }
+    }
+    if (Update.write(data, len) != len) {
+        Update.printError(Serial);
+    }
+    if (final) {
+        if (Update.end(true)) {
+            Serial.printf("[OTA] Update complete: %u bytes\n", index + len);
+        } else {
+            Update.printError(Serial);
+        }
+    }
+}
+
+// ===========================================================================
+// Static file serving
+// ===========================================================================
+
+String WiFiManager::getContentType(const String& filename) {
+    if (filename.endsWith(".html") || filename.endsWith(".htm")) return "text/html";
+    if (filename.endsWith(".css"))  return "text/css";
+    if (filename.endsWith(".js"))   return "application/javascript";
+    if (filename.endsWith(".json")) return "application/json";
+    if (filename.endsWith(".png"))  return "image/png";
+    if (filename.endsWith(".gif"))  return "image/gif";
+    if (filename.endsWith(".jpg"))  return "image/jpeg";
+    if (filename.endsWith(".ico"))  return "image/x-icon";
+    if (filename.endsWith(".gz"))   return "application/x-gzip";
+    return "text/plain";
+}
+
+// Serve file from SPIFFS — tries .gz version first
+// Called from onNotFound catch-all
+bool WiFiManager::serveFile(AsyncWebServerRequest* request, const String& overridePath) {
+    String path = overridePath.length() > 0 ? overridePath : request->url();
+    if (path == "/") path = "/index.html";
+
+    // Try .gz first
+    String gzPath = path + ".gz";
+    if (SPIFFS.exists(gzPath)) {
+        AsyncWebServerResponse* response =
+            request->beginResponse(SPIFFS, gzPath, getContentType(path));
+        response->addHeader("Content-Encoding", "gzip");
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response);
+        return true;
+    }
+
+    if (SPIFFS.exists(path)) {
+        AsyncWebServerResponse* response =
+            request->beginResponse(SPIFFS, path, getContentType(path));
+        response->addHeader("Cache-Control", "max-age=86400");
+        request->send(response);
+        return true;
+    }
+
+    return false;
+}

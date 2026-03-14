@@ -19,35 +19,31 @@ bool wifiMode = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 
-// Sample parameters JSON (this would normally be loaded from SPIFFS)
+// Fallback parameters — used only if SPIFFS params.json is missing or corrupt.
+// IDs must match the openinverter/ZombieVerter param file exactly.
+// Synthetic broadcast-only params (ID >= 100) are included so the UI has
+// somewhere to store SOC/current/battemp from CAN broadcast frames.
 const char* sampleParams = R"(
 {
   "parameters": [
-    {"id": 1, "name": "Speed", "type": "int16", "unit": "rpm", "min": 0, "max": 6000, "decimals": 0, "editable": false},
-    {"id": 2, "name": "Power", "type": "int16", "unit": "kW", "min": 0, "max": 100, "decimals": 1, "editable": false},
-    {"id": 3, "name": "Voltage", "type": "int16", "unit": "V", "min": 0, "max": 400, "decimals": 0, "editable": false},
-    {"id": 4, "name": "Current", "type": "int16", "unit": "A", "min": -200, "max": 200, "decimals": 0, "editable": false},
-    {"id": 5, "name": "Motor Temp", "type": "int16", "unit": "°C", "min": 0, "max": 150, "decimals": 0, "editable": false},
-    {"id": 6, "name": "Inverter Temp", "type": "int16", "unit": "°C", "min": 0, "max": 150, "decimals": 0, "editable": false},
-    {"id": 7, "name": "Battery SOC", "type": "uint8", "unit": "%", "min": 0, "max": 100, "decimals": 0, "editable": false},
-    {"id": 8, "name": "Max Current", "type": "int16", "unit": "A", "min": 50, "max": 500, "decimals": 0, "editable": true},
-    {"id": 9, "name": "Throttle", "type": "uint16", "unit": "%", "min": 0, "max": 100, "decimals": 0, "editable": false},
-    {"id": 10, "name": "Brake Pressure", "type": "uint16", "unit": "%", "min": 0, "max": 100, "decimals": 0, "editable": false},
-    {"id": 11, "name": "Torque Req", "type": "int16", "unit": "Nm", "min": -300, "max": 300, "decimals": 0, "editable": false},
-    {"id": 12, "name": "Torque Act", "type": "int16", "unit": "Nm", "min": -300, "max": 300, "decimals": 0, "editable": false},
-    {"id": 13, "name": "Vehicle Speed", "type": "uint16", "unit": "km/h", "min": 0, "max": 200, "decimals": 0, "editable": false},
-    {"id": 14, "name": "Coolant Temp", "type": "int16", "unit": "°C", "min": 0, "max": 120, "decimals": 0, "editable": false},
-    {"id": 15, "name": "Efficiency", "type": "uint8", "unit": "%", "min": 0, "max": 100, "decimals": 0, "editable": false},
-    {"id": 20, "name": "Max Cell Voltage", "type": "uint16", "unit": "mV", "min": 2500, "max": 4200, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 21, "name": "Min Cell Voltage", "type": "uint16", "unit": "mV", "min": 2500, "max": 4200, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 22, "name": "Avg Cell Voltage", "type": "uint16", "unit": "mV", "min": 2500, "max": 4200, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 23, "name": "Delta Cell Voltage", "type": "uint16", "unit": "mV", "min": 0, "max": 500, "decimals": 0, "editable": false, "category": "BMS"},
-    {"id": 24, "name": "Avg Cell Temp", "type": "int16", "unit": "°C", "min": -20, "max": 80, "decimals": 0, "editable": false, "category": "BMS"}
+    {"id": 2,   "name": "speed",     "type": "int16", "unit": "rpm", "min": 0,    "max": 6000, "decimals": 0, "editable": false},
+    {"id": 3,   "name": "udc",       "type": "int16", "unit": "V",   "min": 0,    "max": 400,  "decimals": 0, "editable": false},
+    {"id": 7,   "name": "tmphs",     "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
+    {"id": 8,   "name": "tmpm",      "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
+    {"id": 27,  "name": "gear",      "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
+    {"id": 61,  "name": "regenmax",  "type": "int16", "unit": "%",   "min": -35,  "max": 0,    "decimals": 0, "editable": true},
+    {"id": 129, "name": "motactive", "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
+    {"id": 100, "name": "soc",       "type": "int16", "unit": "%",   "min": 0,    "max": 100,  "decimals": 0, "editable": false},
+    {"id": 101, "name": "idc",       "type": "int16", "unit": "A",   "min": -500, "max": 500,  "decimals": 0, "editable": false},
+    {"id": 102, "name": "battemp",   "type": "int16", "unit": "C",   "min": -40,  "max": 80,   "decimals": 0, "editable": false}
   ]
 }
 )";
 
+// ============================================================================
 // Input callbacks
+// ============================================================================
+
 void onEncoderRotate(int32_t delta) {
     #if DEBUG_SERIAL
     Serial.println("========================================");
@@ -56,144 +52,84 @@ void onEncoderRotate(int32_t delta) {
     Serial.printf("Current screen: %d\n", uiManager.getCurrentScreen());
     Serial.println("========================================");
     #endif
-    
+
     if (wifiMode) {
-        // Exit WiFi mode
         wifiMode = false;
         wifiManager.stopAP();
         uiManager.setScreen(SCREEN_DASHBOARD);
+        return;
+    }
+
+    ScreenID currentScreen = uiManager.getCurrentScreen();
+
+    if (currentScreen == SCREEN_GEAR) {
+        CANParameter* gear = canManager.getParameter(27);
         #if DEBUG_SERIAL
-        Serial.println("WiFi mode disabled");
+        if (gear) Serial.printf("Gear param found, value=%d\n", gear->getValueAsInt());
+        else      Serial.println("ERROR: Gear param 27 NOT FOUND");
         #endif
-    } else {
-        // Check if we're on a control screen
-        ScreenID currentScreen = uiManager.getCurrentScreen();
-        
-        #if DEBUG_SERIAL
-        Serial.printf("Checking screen type: %d\n", currentScreen);
-        Serial.printf("SCREEN_GEAR = %d\n", SCREEN_GEAR);
-        Serial.printf("SCREEN_MOTOR = %d\n", SCREEN_MOTOR);
-        Serial.printf("SCREEN_REGEN = %d\n", SCREEN_REGEN);
-        if (currentScreen == SCREEN_GEAR) {
-            Serial.println(">>> ON GEAR SCREEN - should adjust gear!");
-        } else if (currentScreen == SCREEN_MOTOR) {
-            Serial.println(">>> ON MOTOR SCREEN - should adjust motor!");
-        } else if (currentScreen == SCREEN_REGEN) {
-            Serial.println(">>> ON REGEN SCREEN - should adjust regen!");
-        } else {
-            Serial.println(">>> ON OTHER SCREEN - should switch screens");
-        }
-        #endif
-        
-        if (currentScreen == SCREEN_GEAR) {
-            // Change gear
-            CANParameter* gear = canManager.getParameter(27);
-            
+        if (gear) {
+            int32_t newGear = gear->getValueAsInt();
+            newGear = delta > 0 ? (newGear + 1) % 4 : (newGear - 1 + 4) % 4;
             #if DEBUG_SERIAL
-            Serial.printf("Looking for parameter 27 (Gear)...\n");
-            if (gear) {
-                Serial.printf(">>> FOUND parameter 27!\n");
-                Serial.printf("    Current value: %d\n", gear->getValueAsInt());
-            } else {
-                Serial.printf(">>> ERROR: Parameter 27 NOT FOUND!\n");
-                Serial.printf("    Total parameters loaded: %d\n", canManager.getParameterCount());
-            }
+            Serial.printf("Gear change -> %d\n", newGear);
             #endif
-            
-            if (gear) {
-                int32_t currentGear = gear->getValueAsInt();
-                int32_t newGear = currentGear;
-                
-                if (delta > 0) {
-                    newGear = (currentGear + 1) % 4;  // Cycle 0-3
-                } else {
-                    newGear = (currentGear - 1 + 4) % 4;  // Cycle backwards
-                }
-                
-                #if DEBUG_SERIAL
-                Serial.println("========================================");
-                Serial.printf("GEAR CHANGE REQUESTED\n");
-                Serial.printf("Current gear: %d -> New gear: %d\n", currentGear, newGear);
-                Serial.printf("Sending SDO Write to param 27...\n");
-                Serial.println("========================================");
-                #endif
-                
-                canManager.setParameter(27, newGear);
-            }
-        } else if (currentScreen == SCREEN_MOTOR) {
-            // Change motor mode
-            CANParameter* motor = canManager.getParameter(129);
-            if (motor) {
-                int32_t currentMotor = motor->getValueAsInt();
-                int32_t newMotor = currentMotor;
-                
-                if (delta > 0) {
-                    newMotor = (currentMotor + 1) % 4;  // Cycle 0-3
-                } else {
-                    newMotor = (currentMotor - 1 + 4) % 4;  // Cycle backwards
-                }
-                
-                #if DEBUG_SERIAL
-                Serial.printf("Motor change: %d -> %d\n", currentMotor, newMotor);
-                #endif
-                
-                canManager.setParameter(129, newMotor);
-            }
-        } else if (currentScreen == SCREEN_REGEN) {
-            // Adjust regen - rotate changes by 1% increments
-            CANParameter* regen = canManager.getParameter(61);
-            if (regen) {
-                int32_t currentRegen = regen->getValueAsInt();
-                int32_t newRegen = currentRegen;
-                
-                if (delta > 0) {
-                    newRegen = currentRegen + 1;  // Increase (less negative)
-                    if (newRegen > 0) newRegen = 0;  // Max is 0
-                } else {
-                    newRegen = currentRegen - 1;  // Decrease (more negative)
-                    if (newRegen < -35) newRegen = -35;  // Min is -35
-                }
-                
-                #if DEBUG_SERIAL
-                Serial.printf("Regen change: %d -> %d\n", currentRegen, newRegen);
-                #endif
-                
-                canManager.setParameter(61, newRegen);
-            }
+            canManager.setParameter(27, newGear);
+        }
+
+    } else if (currentScreen == SCREEN_MOTOR) {
+        CANParameter* motor = canManager.getParameter(129);
+        if (motor) {
+            int32_t newMotor = motor->getValueAsInt();
+            newMotor = delta > 0 ? (newMotor + 1) % 4 : (newMotor - 1 + 4) % 4;
+            #if DEBUG_SERIAL
+            Serial.printf("Motor change -> %d\n", newMotor);
+            #endif
+            canManager.setParameter(129, newMotor);
+        }
+
+    } else if (currentScreen == SCREEN_REGEN) {
+        CANParameter* regen = canManager.getParameter(61);
+        if (regen) {
+            int32_t newRegen = regen->getValueAsInt();
+            newRegen += delta > 0 ? 1 : -1;
+            if (newRegen > 0)   newRegen = 0;
+            if (newRegen < -35) newRegen = -35;
+            #if DEBUG_SERIAL
+            Serial.printf("Regen change -> %d\n", newRegen);
+            #endif
+            canManager.setParameter(61, newRegen);
+        }
+
+    } else {
+        if (delta > 0) {
+            uiManager.setScreen(uiManager.getNextScreen());
         } else {
-            // Normal screen navigation
-            if (delta > 0) {
-                uiManager.setScreen(uiManager.getNextScreen());
-            } else {
-                uiManager.setScreen(uiManager.getPreviousScreen());
-            }
+            uiManager.setScreen(uiManager.getPreviousScreen());
         }
     }
 }
 
 void onButtonClick() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
-    
-    // If on a control screen (GEAR, MOTOR, REGEN), click exits to next screen
-    if (currentScreen == SCREEN_GEAR || currentScreen == SCREEN_MOTOR || currentScreen == SCREEN_REGEN) {
+
+    if (currentScreen == SCREEN_GEAR ||
+        currentScreen == SCREEN_MOTOR ||
+        currentScreen == SCREEN_REGEN) {
         uiManager.setScreen(uiManager.getNextScreen());
         #if DEBUG_SERIAL
         Serial.println("Button click - exiting control screen");
         #endif
         return;
     }
-    
-    // Otherwise, toggle WiFi mode
+
     if (!wifiMode) {
         wifiMode = true;
         wifiManager.startAP();
         uiManager.setScreen(SCREEN_WIFI);
         #if DEBUG_SERIAL
         Serial.println("WiFi mode enabled");
-        Serial.print("Connect to SSID: ");
-        Serial.println(WIFI_AP_SSID);
-        Serial.print("IP: ");
-        Serial.println(wifiManager.getIPAddress());
+        Serial.printf("Connect to SSID: %s\n", WIFI_AP_SSID);
         #endif
     } else {
         wifiMode = false;
@@ -206,11 +142,10 @@ void onButtonClick() {
 }
 
 void onButtonDoubleClick() {
-    // Reserved for future use
+    // Reserved
 }
 
 void onButtonLongPress() {
-    // Back to dashboard (works in any mode)
     if (wifiMode) {
         wifiMode = false;
         wifiManager.stopAP();
@@ -223,13 +158,10 @@ void onButtonLongPress() {
 
 void onTouchTap(uint16_t x, uint16_t y) {
     ScreenID currentScreen = uiManager.getCurrentScreen();
-    
-    // Gear screen - tap to select gear directly
+
     if (currentScreen == SCREEN_GEAR) {
-        // Touch zones for 4 gear options
-        // Screen is 240x240, options displayed at y ~170-236 (bottom area)
         if (y >= 170 && y <= 236) {
-            int option = (y - 170) / 22;  // 22 pixels per option
+            int option = (y - 170) / 22;
             if (option >= 0 && option <= 3) {
                 #if DEBUG_SERIAL
                 Serial.printf("Touch selected gear: %d\n", option);
@@ -238,12 +170,10 @@ void onTouchTap(uint16_t x, uint16_t y) {
             }
         }
     }
-    
-    // Motor screen - tap to select motor mode directly
+
     if (currentScreen == SCREEN_MOTOR) {
-        // Touch zones for 4 motor options (same layout as gear)
         if (y >= 170 && y <= 236) {
-            int option = (y - 170) / 22;  // 22 pixels per option
+            int option = (y - 170) / 22;
             if (option >= 0 && option <= 3) {
                 #if DEBUG_SERIAL
                 Serial.printf("Touch selected motor: %d\n", option);
@@ -252,37 +182,29 @@ void onTouchTap(uint16_t x, uint16_t y) {
             }
         }
     }
-    
-    // Regen screen - tap left/right for adjustment
+
     if (currentScreen == SCREEN_REGEN) {
         CANParameter* regen = canManager.getParameter(61);
         if (regen) {
-            int32_t currentRegen = regen->getValueAsInt();
-            int32_t newRegen = currentRegen;
-            
-            // Left half = decrease (more regen), right half = increase (less regen)
-            if (x < SCREEN_CENTER_X) {
-                // Left tap - decrease by 5 (more negative = stronger regen)
-                newRegen = currentRegen - 5;
-                if (newRegen < -35) newRegen = -35;
-            } else {
-                // Right tap - increase by 5 (less negative = lighter regen)
-                newRegen = currentRegen + 5;
-                if (newRegen > 0) newRegen = 0;
-            }
-            
+            int32_t newRegen = regen->getValueAsInt();
+            newRegen += (x < SCREEN_CENTER_X) ? -5 : 5;
+            if (newRegen > 0)   newRegen = 0;
+            if (newRegen < -35) newRegen = -35;
             #if DEBUG_SERIAL
-            Serial.printf("Touch adjusted regen: %d -> %d\n", currentRegen, newRegen);
+            Serial.printf("Touch adjusted regen -> %d\n", newRegen);
             #endif
-            
             canManager.setParameter(61, newRegen);
         }
     }
-    
+
     #if DEBUG_TOUCH
     Serial.printf("Tap at: %d, %d\n", x, y);
     #endif
 }
+
+// ============================================================================
+// setup
+// ============================================================================
 
 void setup() {
     #if DEBUG_SERIAL
@@ -291,8 +213,7 @@ void setup() {
     Serial.println("ZombieVerter Display - M5Stack Dial");
     Serial.println("====================================");
     #endif
-    
-    // Initialize hardware
+
     if (!Hardware::init()) {
         #if DEBUG_SERIAL
         Serial.println("Hardware init failed!");
@@ -302,35 +223,32 @@ void setup() {
     #if DEBUG_SERIAL
     Serial.println("Hardware initialized");
     #endif
-    
-    // Show splash screen for 2 seconds
+
+    // Show splash for 2 seconds
     uiManager.init(&canManager);
-    
     uint32_t splashStart = millis();
-    while (millis() - splashStart < 2000) {  // 2 seconds
-        lv_timer_handler();  // Update LVGL display
+    while (millis() - splashStart < 2000) {
+        lv_timer_handler();
         delay(5);
     }
-    
+
     // Initialize CAN
     if (!canManager.init()) {
         #if DEBUG_SERIAL
         Serial.println("CAN init failed!");
         #endif
-        // Continue anyway - will show disconnected
     }
     #if DEBUG_SERIAL
     Serial.println("CAN initialized");
     #endif
-    
-    // Load parameters
+
+    // Load sample parameters as baseline fallback
     if (canManager.loadParametersFromJSON(sampleParams)) {
         #if DEBUG_SERIAL
-        Serial.printf("Loaded %d parameters\n", canManager.getParameterCount());
+        Serial.printf("Loaded %d sample parameters\n", canManager.getParameterCount());
         #endif
     }
-    
-    // Initialize input
+
     if (!inputManager.init()) {
         #if DEBUG_SERIAL
         Serial.println("Input init failed!");
@@ -339,8 +257,7 @@ void setup() {
     #if DEBUG_SERIAL
     Serial.println("Input initialized");
     #endif
-    
-    // Initialize WiFi manager
+
     if (!wifiManager.init(&canManager)) {
         #if DEBUG_SERIAL
         Serial.println("WiFi manager init failed!");
@@ -349,79 +266,64 @@ void setup() {
     #if DEBUG_SERIAL
     Serial.println("WiFi manager initialized");
     #endif
-    
-    // WiFi is DISABLED at startup - use button to enable if needed
-    #if DEBUG_SERIAL
-    Serial.println("========================================");
-    Serial.println("WiFi DISABLED at startup");
-    Serial.println("Press button to enable WiFi mode");
-    Serial.println("========================================");
-    #endif
-    
-    wifiMode = false;  // Start with WiFi OFF
-    // Do NOT start WiFi automatically
-    // uiManager.setScreen will be set below after loading parameters
-    
-    // Try to load parameters from SPIFFS
-    if (SPIFFS.exists("/params.json")) {
-        File paramFile = SPIFFS.open("/params.json", "r");
-        if (paramFile) {
-            size_t fileSize = paramFile.size();
-            
-            #if DEBUG_SERIAL
-            Serial.printf("Found params.json (%d bytes)\n", fileSize);
-            #endif
-            
-            // Check file size is reasonable
-            if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
-                String jsonContent = paramFile.readString();
-                paramFile.close();
-                
-                if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
-                    #if DEBUG_SERIAL
-                    Serial.printf("Loaded %d parameters from SPIFFS\n", canManager.getParameterCount());
-                    #endif
-                } else {
-                    #if DEBUG_SERIAL
-                    Serial.println("Failed to parse saved parameters, using defaults");
-                    #endif
-                    // Load defaults on parse failure
-                    canManager.loadParametersFromJSON(sampleParams);
-                }
-            } else {
-                paramFile.close();
+
+    wifiMode = false;
+
+    // Mount SPIFFS and try to load params.json (overwrites sample params if successful)
+    if (SPIFFS.begin(true)) {
+        #if DEBUG_SERIAL
+        Serial.println("SPIFFS mounted");
+        Serial.printf("Total: %d bytes\n", SPIFFS.totalBytes());
+        Serial.printf("Used: %d bytes\n",  SPIFFS.usedBytes());
+        #endif
+
+        if (SPIFFS.exists("/params.json")) {
+            File paramFile = SPIFFS.open("/params.json", "r");
+            if (paramFile) {
+                size_t fileSize = paramFile.size();
                 #if DEBUG_SERIAL
-                Serial.println("Saved parameters file invalid, using defaults");
+                Serial.printf("Found params.json (%d bytes)\n", fileSize);
                 #endif
-                // Delete corrupted file
-                SPIFFS.remove("/params.json");
-                canManager.loadParametersFromJSON(sampleParams);
+                if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
+                    String jsonContent = paramFile.readString();
+                    paramFile.close();
+                    if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
+                        #if DEBUG_SERIAL
+                        Serial.printf("Loaded %d parameters from SPIFFS\n", canManager.getParameterCount());
+                        #endif
+                    } else {
+                        #if DEBUG_SERIAL
+                        Serial.println("Failed to parse SPIFFS parameters, keeping sample params");
+                        #endif
+                    }
+                } else {
+                    paramFile.close();
+                    #if DEBUG_SERIAL
+                    Serial.println("SPIFFS parameters file invalid, keeping sample params");
+                    #endif
+                    SPIFFS.remove("/params.json");
+                }
             }
         } else {
             #if DEBUG_SERIAL
-            Serial.println("Failed to open saved parameters, using defaults");
+            Serial.println("No params.json on SPIFFS, using sample params");
             #endif
-            canManager.loadParametersFromJSON(sampleParams);
         }
     } else {
         #if DEBUG_SERIAL
-        Serial.println("No saved parameters, using defaults");
+        Serial.println("SPIFFS mount failed, using sample params");
         #endif
-        canManager.loadParametersFromJSON(sampleParams);
     }
-    
-    // Set input callbacks
+
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);
     inputManager.setOnButtonDoubleClick(onButtonDoubleClick);
     inputManager.setOnButtonLongPress(onButtonLongPress);
     inputManager.setOnTouchTap(onTouchTap);
-    
-    // Switch to dashboard
+
     uiManager.setScreen(SCREEN_DASHBOARD);
-    
     systemReady = true;
-    
+
     #if DEBUG_SERIAL
     Serial.println("System ready!");
     Serial.println("====================================");
@@ -431,76 +333,52 @@ void setup() {
     Serial.println("  Double-click: (Reserved)");
     Serial.println("  Long-press: Back to Dashboard");
     Serial.println("====================================");
-    Serial.println("Screens:");
-    Serial.println("  1. Dashboard - Main overview");
-    Serial.println("  2. Power - Power metrics");
-    Serial.println("  3. Temperature - Motor/inverter temps");
-    Serial.println("  4. Battery - SOC and voltage");
-    Serial.println("  5. BMS - Cell voltages & temps");
-    Serial.println("  6. WiFi - Upload parameters");
-    Serial.println("  7. Settings - Configuration");
-    Serial.println("====================================");
     Serial.println("WiFi Mode:");
     Serial.println("  Click button to enable WiFi AP");
     Serial.println("  Connect to: " WIFI_AP_SSID);
     Serial.println("  Password: " WIFI_AP_PASSWORD);
     Serial.println("  Browse to: 192.168.4.1");
-    Serial.println("  Upload your params.json file");
-    Serial.println("  Rotate dial to exit WiFi mode");
     Serial.println("====================================");
     #endif
 }
 
+// ============================================================================
+// loop
+// ============================================================================
+
 void loop() {
     if (!systemReady) return;
-    
-    // Update hardware
+
     Hardware::update();
-    
-    // Update input
     inputManager.update();
-    
-    // Update WiFi if in WiFi mode
+
     if (wifiMode) {
         wifiManager.update();
     }
-    
-    // Update CAN and track last ID received
-    static uint32_t lastCanID = 0;
-    static bool hadConnection = false;
+
     canManager.update();
-    
-    // Check if CAN connection status changed and update UI with last CAN ID
-    bool nowConnected = canManager.isConnected();
-    if (nowConnected != hadConnection || nowConnected) {
-        // For debugging: assume we're getting SOME CAN traffic
-        // We'll update with a placeholder - real implementation would track in CAN manager
-        if (nowConnected) {
-            // Just show that we're connected - actual CAN ID tracking needs more work
-            // For now, this will at least show connection status
-        }
-        hadConnection = nowConnected;
-    }
-    
-    // Request parameters periodically
+
+    // Round-robin SDO parameter polling.
+    // requestParameter() in CANData.cpp silently skips IDs >= 100 (broadcast-only).
+    // No dirty check — params refresh continuously.
     if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
         lastParamRequestTime = millis();
-        
-        // Request next parameter
+
         CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
-        if (param && param->dirty) {
+        if (param) {
             canManager.requestParameter(param->id);
             #if DEBUG_CAN
             Serial.printf("Requesting param %d (%s)\n", param->id, param->name);
             #endif
         }
-        
-        currentParamIndex = (currentParamIndex + 1) % canManager.getParameterCount();
+
+        uint16_t paramCount = canManager.getParameterCount();
+        if (paramCount > 0) {
+            currentParamIndex = (currentParamIndex + 1) % paramCount;
+        }
     }
-    
-    // Update UI
+
     uiManager.update();
-    
-    // Small delay to prevent watchdog
+
     delay(10);
 }
