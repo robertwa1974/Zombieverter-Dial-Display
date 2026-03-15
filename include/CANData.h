@@ -9,13 +9,14 @@
 // CAN Parameter structure — minimal for RAM efficiency
 // Metadata (unit, category, min, max, default) is served from params.json directly
 struct CANParameter {
-    uint16_t id;       // VCU id (may be 2000+ for spot values)
-    char name[32];     // parameter name for lookup by cmdGet
-    bool editable;     // true = writable parameter
-    
-    int32_t valueInt;  // current live value (integer scaled)
+    uint16_t id;
+    char name[32];
+    bool editable;
+    bool fromBroadcast;  // true = value comes from CAN broadcast, skip SDO polling
+
+    int32_t valueInt;
     uint32_t lastUpdateTime;
-    
+
     void setValue(int32_t val) { valueInt = val; lastUpdateTime = millis(); }
     int32_t getValueAsInt() { return valueInt; }
 };
@@ -54,6 +55,18 @@ public:
     // Connection status
     bool isConnected() { return connected; }
     uint32_t getLastMessageTime() { return lastMessageTime; }
+
+    // Build the params JSON cache in the main loop task (never call from async_tcp).
+    // Reads params.json from SPIFFS, patches live values, stores in cachedParamsJson.
+    // Call periodically from loop() — safe to call every 3 s.
+    void buildParamsJsonCache();
+
+    // Return a const reference to the pre-built JSON string.
+    // Safe to read from async_tcp since writes use move-swap (atomic replace).
+    const String& getParamsJsonCache() const { return cachedParamsJson; }
+
+    // Legacy — kept for reference, NOT called from async_tcp anymore.
+    // void streamParamsJson(AsyncResponseStream* stream);
     
     // BMS cell voltage access
     uint16_t getCellVoltage(uint8_t cellIndex);
@@ -85,6 +98,10 @@ private:
     
     bool connected;
     uint32_t lastMessageTime;
+
+    // Pre-built params JSON — rebuilt in the main loop, served from async handler
+    String   cachedParamsJson;
+    uint32_t lastJsonBuildMs;
     
     static const uint8_t MAX_BMS_CELLS = 96;
     uint16_t bmsCellVoltages[MAX_BMS_CELLS];

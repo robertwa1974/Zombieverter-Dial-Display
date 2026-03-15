@@ -26,10 +26,11 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
+#include "driver/twai.h"
 
-// Forward declaration — avoid including the full CANData.h here
+// Forward declarations — full headers included in WiFiManager.cpp only
 class CANDataManager;
+class AsyncWebServerRequest;
 
 class WiFiManager {
 public:
@@ -52,6 +53,7 @@ public:
 
     // Public so lambdas in startServer() can call them
     void handleCmd(AsyncWebServerRequest* request);
+    void handleSpot(AsyncWebServerRequest* request);
     void handleWifiGet(AsyncWebServerRequest* request);
     void handleWifiPost(AsyncWebServerRequest* request);
     void handleFileList(AsyncWebServerRequest* request);

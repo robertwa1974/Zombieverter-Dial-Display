@@ -16,13 +16,11 @@ WiFiManager wifiManager;
 // State tracking
 bool systemReady = false;
 bool wifiMode = false;
+bool lvglSuspended = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 
 // Fallback parameters — used only if SPIFFS params.json is missing or corrupt.
-// IDs must match the openinverter/ZombieVerter param file exactly.
-// Synthetic broadcast-only params (ID >= 100) are included so the UI has
-// somewhere to store SOC/current/battemp from CAN broadcast frames.
 const char* sampleParams = R"(
 {
   "parameters": [
@@ -41,21 +39,36 @@ const char* sampleParams = R"(
 )";
 
 // ============================================================================
+// WiFi mode helpers
+// ============================================================================
+
+void suspendLVGL() {
+    lvglSuspended = true;
+    #if DEBUG_SERIAL
+    Serial.println("[UI] LVGL suspended for WiFi mode");
+    #endif
+}
+
+void resumeLVGL() {
+    lvglSuspended = false;
+    // Force LVGL to redraw everything from scratch
+    lv_obj_invalidate(lv_scr_act());
+    #if DEBUG_SERIAL
+    Serial.println("[UI] LVGL resumed");
+    #endif
+}
+
+// ============================================================================
 // Input callbacks
 // ============================================================================
 
 void onEncoderRotate(int32_t delta) {
-    #if DEBUG_SERIAL
-    Serial.println("========================================");
-    Serial.printf("ENCODER ROTATED: delta = %d\n", delta);
-    Serial.printf("WiFi mode: %s\n", wifiMode ? "YES" : "NO");
-    Serial.printf("Current screen: %d\n", uiManager.getCurrentScreen());
-    Serial.println("========================================");
-    #endif
-
     if (wifiMode) {
+        // Any rotation exits WiFi mode
         wifiMode = false;
         wifiManager.stopAP();
+        uiManager.resetWifiScreen();
+        resumeLVGL();
         uiManager.setScreen(SCREEN_DASHBOARD);
         return;
     }
@@ -63,44 +76,40 @@ void onEncoderRotate(int32_t delta) {
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     if (currentScreen == SCREEN_GEAR) {
+        if (!uiManager.isEditMode()) {
+            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            return;
+        }
         CANParameter* gear = canManager.getParameter(27);
-        #if DEBUG_SERIAL
-        if (gear) Serial.printf("Gear param found, value=%d\n", gear->getValueAsInt());
-        else      Serial.println("ERROR: Gear param 27 NOT FOUND");
-        #endif
         if (gear) {
             int32_t newGear = gear->getValueAsInt();
             newGear = delta > 0 ? (newGear + 1) % 4 : (newGear - 1 + 4) % 4;
-            #if DEBUG_SERIAL
-            Serial.printf("Gear change -> %d\n", newGear);
-            #endif
             canManager.setParameter(27, newGear);
         }
-
     } else if (currentScreen == SCREEN_MOTOR) {
+        if (!uiManager.isEditMode()) {
+            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            return;
+        }
         CANParameter* motor = canManager.getParameter(129);
         if (motor) {
             int32_t newMotor = motor->getValueAsInt();
             newMotor = delta > 0 ? (newMotor + 1) % 4 : (newMotor - 1 + 4) % 4;
-            #if DEBUG_SERIAL
-            Serial.printf("Motor change -> %d\n", newMotor);
-            #endif
             canManager.setParameter(129, newMotor);
         }
-
     } else if (currentScreen == SCREEN_REGEN) {
+        if (!uiManager.isEditMode()) {
+            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            return;
+        }
         CANParameter* regen = canManager.getParameter(61);
         if (regen) {
             int32_t newRegen = regen->getValueAsInt();
             newRegen += delta > 0 ? 1 : -1;
             if (newRegen > 0)   newRegen = 0;
             if (newRegen < -35) newRegen = -35;
-            #if DEBUG_SERIAL
-            Serial.printf("Regen change -> %d\n", newRegen);
-            #endif
             canManager.setParameter(61, newRegen);
         }
-
     } else {
         if (delta > 0) {
             uiManager.setScreen(uiManager.getNextScreen());
@@ -113,27 +122,34 @@ void onEncoderRotate(int32_t delta) {
 void onButtonClick() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
+    // On editable screens: first click enters edit mode, second click exits
     if (currentScreen == SCREEN_GEAR ||
         currentScreen == SCREEN_MOTOR ||
         currentScreen == SCREEN_REGEN) {
-        uiManager.setScreen(uiManager.getNextScreen());
-        #if DEBUG_SERIAL
-        Serial.println("Button click - exiting control screen");
-        #endif
+        if (uiManager.isEditMode()) {
+            uiManager.toggleEditMode();  // exit edit mode
+        } else {
+            uiManager.toggleEditMode();  // enter edit mode
+        }
         return;
     }
 
     if (!wifiMode) {
         wifiMode = true;
         wifiManager.startAP();
+        // Update WiFi screen with IP while LVGL still running
         uiManager.setScreen(SCREEN_WIFI);
+        uiManager.updateWifiScreen(wifiManager.getIPAddress());
+        for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
+        lvglSuspended = true;
         #if DEBUG_SERIAL
         Serial.println("WiFi mode enabled");
-        Serial.printf("Connect to SSID: %s\n", WIFI_AP_SSID);
         #endif
     } else {
         wifiMode = false;
         wifiManager.stopAP();
+        uiManager.resetWifiScreen();
+        resumeLVGL();
         uiManager.setScreen(SCREEN_DASHBOARD);
         #if DEBUG_SERIAL
         Serial.println("WiFi mode disabled");
@@ -149,37 +165,38 @@ void onButtonLongPress() {
     if (wifiMode) {
         wifiMode = false;
         wifiManager.stopAP();
-        #if DEBUG_SERIAL
-        Serial.println("WiFi mode disabled");
-        #endif
+        uiManager.resetWifiScreen();
+        resumeLVGL();
     }
     uiManager.setScreen(SCREEN_DASHBOARD);
 }
 
 void onTouchTap(uint16_t x, uint16_t y) {
+    if (wifiMode) {
+        // Touch exits WiFi mode
+        wifiMode = false;
+        wifiManager.stopAP();
+        uiManager.resetWifiScreen();
+        resumeLVGL();
+        uiManager.setScreen(SCREEN_DASHBOARD);
+        return;
+    }
+
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     if (currentScreen == SCREEN_GEAR) {
         if (y >= 170 && y <= 236) {
             int option = (y - 170) / 22;
-            if (option >= 0 && option <= 3) {
-                #if DEBUG_SERIAL
-                Serial.printf("Touch selected gear: %d\n", option);
-                #endif
+            if (option >= 0 && option <= 3)
                 canManager.setParameter(27, option);
-            }
         }
     }
 
     if (currentScreen == SCREEN_MOTOR) {
         if (y >= 170 && y <= 236) {
             int option = (y - 170) / 22;
-            if (option >= 0 && option <= 3) {
-                #if DEBUG_SERIAL
-                Serial.printf("Touch selected motor: %d\n", option);
-                #endif
+            if (option >= 0 && option <= 3)
                 canManager.setParameter(129, option);
-            }
         }
     }
 
@@ -190,16 +207,9 @@ void onTouchTap(uint16_t x, uint16_t y) {
             newRegen += (x < SCREEN_CENTER_X) ? -5 : 5;
             if (newRegen > 0)   newRegen = 0;
             if (newRegen < -35) newRegen = -35;
-            #if DEBUG_SERIAL
-            Serial.printf("Touch adjusted regen -> %d\n", newRegen);
-            #endif
             canManager.setParameter(61, newRegen);
         }
     }
-
-    #if DEBUG_TOUCH
-    Serial.printf("Tap at: %d, %d\n", x, y);
-    #endif
 }
 
 // ============================================================================
@@ -224,7 +234,6 @@ void setup() {
     Serial.println("Hardware initialized");
     #endif
 
-    // Show splash for 2 seconds
     uiManager.init(&canManager);
     uint32_t splashStart = millis();
     while (millis() - splashStart < 2000) {
@@ -232,7 +241,6 @@ void setup() {
         delay(5);
     }
 
-    // Initialize CAN
     if (!canManager.init()) {
         #if DEBUG_SERIAL
         Serial.println("CAN init failed!");
@@ -242,7 +250,6 @@ void setup() {
     Serial.println("CAN initialized");
     #endif
 
-    // Load sample parameters as baseline fallback
     if (canManager.loadParametersFromJSON(sampleParams)) {
         #if DEBUG_SERIAL
         Serial.printf("Loaded %d sample parameters\n", canManager.getParameterCount());
@@ -268,8 +275,8 @@ void setup() {
     #endif
 
     wifiMode = false;
+    lvglSuspended = false;
 
-    // Mount SPIFFS and try to load params.json (overwrites sample params if successful)
     if (SPIFFS.begin(true)) {
         #if DEBUG_SERIAL
         Serial.println("SPIFFS mounted");
@@ -291,10 +298,6 @@ void setup() {
                         #if DEBUG_SERIAL
                         Serial.printf("Loaded %d parameters from SPIFFS\n", canManager.getParameterCount());
                         #endif
-                    } else {
-                        #if DEBUG_SERIAL
-                        Serial.println("Failed to parse SPIFFS parameters, keeping sample params");
-                        #endif
                     }
                 } else {
                     paramFile.close();
@@ -309,10 +312,6 @@ void setup() {
             Serial.println("No params.json on SPIFFS, using sample params");
             #endif
         }
-    } else {
-        #if DEBUG_SERIAL
-        Serial.println("SPIFFS mount failed, using sample params");
-        #endif
     }
 
     inputManager.setOnEncoderRotate(onEncoderRotate);
@@ -354,31 +353,44 @@ void loop() {
 
     if (wifiMode) {
         wifiManager.update();
+        canManager.update();
+
+        // Keep SDO polling running in WiFi mode so spot values stay live
+        if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
+            lastParamRequestTime = millis();
+            CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
+            if (param) {
+                canManager.requestParameter(param->id);
+            }
+            uint16_t paramCount = canManager.getParameterCount();
+            if (paramCount > 0) {
+                currentParamIndex = (currentParamIndex + 1) % paramCount;
+            }
+        }
+
+        delay(10);
+        return;
     }
 
+    // Normal mode: full CAN + LVGL update
     canManager.update();
 
-    // Round-robin SDO parameter polling.
-    // requestParameter() in CANData.cpp silently skips IDs >= 100 (broadcast-only).
-    // No dirty check — params refresh continuously.
+    // Round-robin SDO parameter polling
     if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
         lastParamRequestTime = millis();
-
         CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
         if (param) {
             canManager.requestParameter(param->id);
-            #if DEBUG_CAN
-            Serial.printf("Requesting param %d (%s)\n", param->id, param->name);
-            #endif
         }
-
         uint16_t paramCount = canManager.getParameterCount();
         if (paramCount > 0) {
             currentParamIndex = (currentParamIndex + 1) % paramCount;
         }
     }
 
-    uiManager.update();
+    if (!lvglSuspended) {
+        uiManager.update();
+    }
 
     delay(10);
 }

@@ -47,6 +47,10 @@ public:
     void toggleEditMode();
     bool isEditMode() { return editMode; }
     bool isEditableScreen();  // Check if current screen supports editing
+
+    void updateWifiScreen(const String& ip);
+    void resetWifiScreen();
+    void updateSettings();
     
 private:
     // LVGL Setup

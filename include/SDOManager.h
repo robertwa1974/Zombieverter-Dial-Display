@@ -28,9 +28,10 @@
 #define SDO_RESP_WRITE      0x60    // Download confirmation
 #define SDO_RESP_ABORT      0x80    // Abort
 
-// ZombieVerter Index 0x2100 bytes
-#define SDO_INDEX_LO        0x00    // 0x2100 & 0xFF
-#define SDO_INDEX_HI        0x21    // 0x2100 >> 8
+// ZombieVerter base index 0x2100 — subindex and upper byte vary per param ID
+// Index = 0x2100 | (paramId >> 8)
+// Subindex = paramId & 0xFF
+#define SDO_BASE_INDEX      0x2100
 
 // SDO Abort Codes
 #define SDO_ABORT_TOGGLE        0x05030000
@@ -52,20 +53,20 @@ enum SDORequestType : uint8_t {
 
 struct SDORequest {
     SDORequestType  type;
-    uint8_t         paramId;
-    int32_t         value;          // Used for writes
-    bool            highPriority;   // Jumps ahead of bulk reads
+    uint16_t        paramId;    // Full 16-bit VCU param ID (supports 2000+ spot values)
+    int32_t         value;      // Used for writes
+    bool            highPriority;
 };
 
 struct SDOResult {
-    uint8_t     paramId;
-    int32_t     value;              // Valid on successful read
+    uint16_t    paramId;        // Full 16-bit param ID
+    int32_t     value;          // Valid on successful read
     bool        success;
-    bool        isWrite;            // true = write confirmed, false = read result
+    bool        isWrite;
     uint32_t    abortCode;
 };
 
-// Callback invoked from the SDO task when a transaction completes
+// Callback invoked when a transaction completes
 typedef void (*SDOResultCallback)(const SDOResult& result);
 
 // ============================================================================
@@ -87,57 +88,47 @@ class SDOManager {
 public:
     SDOManager();
 
-    // Call after TWAI is initialised. Starts the background task on core 0.
     bool init(SDOResultCallback callback = nullptr);
 
-    // Queue a read request. Returns false if queue is full.
-    bool requestRead(uint8_t paramId, bool highPriority = false);
+    // Queue a read request — accepts full 16-bit param ID
+    bool requestRead(uint16_t paramId, bool highPriority = false);
 
-    // Queue a write request. Returns false if queue is full.
-    bool requestWrite(uint8_t paramId, int32_t value, bool highPriority = false);
+    // Queue a write request — accepts full 16-bit param ID
+    bool requestWrite(uint16_t paramId, int32_t value, bool highPriority = false);
 
-    // Queue a save-to-flash command.
     bool requestSaveFlash();
 
-    // Feed incoming TWAI frames here (call from your CAN receive path).
     void processIncomingFrame(const twai_message_t& msg);
 
-    // Statistics
     uint32_t getSuccessCount()  { return successCount; }
     uint32_t getFailureCount()  { return failureCount; }
     uint32_t getTimeoutCount()  { return timeoutCount; }
     uint16_t getQueueDepth();
 
-    // Replace callback after init if needed
     void setResultCallback(SDOResultCallback cb) { resultCallback = cb; }
 
 private:
-    // FreeRTOS handles
     TaskHandle_t    taskHandle;
     QueueHandle_t   requestQueue;
-    QueueHandle_t   rxFrameQueue;   // Incoming SDO frames fed from CAN task
+    QueueHandle_t   rxFrameQueue;
     SemaphoreHandle_t statsMutex;
 
-    // State machine
     SDOState        state;
     SDORequest      currentRequest;
     uint32_t        stateEnteredMs;
     uint8_t         retryCount;
     uint32_t        lastTransactionMs;
 
-    // Callback
     SDOResultCallback resultCallback;
 
-    // Statistics (protected by statsMutex)
     uint32_t successCount;
     uint32_t failureCount;
     uint32_t timeoutCount;
 
-    // Internal helpers
-    void        taskLoop();                 // Runs inside FreeRTOS task
-    bool        sendFrame(uint8_t cmd, uint8_t paramId, int32_t value = 0);
+    void        taskLoop();
+    bool        sendFrame(uint8_t cmd, uint16_t paramId, int32_t value = 0);
     void        handleFrame(const twai_message_t& msg);
-    void        deliverResult(bool success, uint8_t paramId,
+    void        deliverResult(bool success, uint16_t paramId,
                               int32_t value, bool isWrite,
                               uint32_t abortCode = 0);
     const char* abortDescription(uint32_t code);

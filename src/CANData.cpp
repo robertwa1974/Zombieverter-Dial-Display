@@ -1,6 +1,7 @@
 #include "CANData.h"
 #include "Config.h"
 #include "driver/twai.h"
+#include <SPIFFS.h>
 
 // Static instance pointer for SDO callback
 CANDataManager* CANDataManager::instance = nullptr;
@@ -20,8 +21,7 @@ void CANDataManager::onSDOResult(const SDOResult& result) {
         return;
     }
 
-    // Real ZombieVerter SDO values are fixed-point ×32, so divide back to engineering units.
-    // Update by SDO param ID (1-99 range, VCU's short IDs)
+    // ZombieVerter SDO values are always fixed-point ×32 regardless of param type
     instance->updateParameterBySDOId(result.paramId, result.value / 32);
     #if DEBUG_CAN
     Serial.printf("[SDO CB] Read param %d raw=%d scaled=%d\n",
@@ -142,9 +142,26 @@ void CANDataManager::update() {
 // ============================================================================
 
 void CANDataManager::requestParameter(uint16_t paramId) {
-    // Only SDO-poll params with short VCU IDs (< 1000)
-    if (paramId >= 1000) return;
-    sdoManager.requestRead((uint8_t)paramId);
+    // Skip SDO polling for params that come from CAN broadcasts.
+    // These have canid in params.json and are updated by handleGenericMessage.
+    // Polling them via SDO returns ×32 encoded values which would corrupt
+    // the correctly-scaled broadcast values used by the dial display.
+    static const uint16_t broadcastIds[] = {
+        2006,  // udc       (0x522)
+        2012,  // idc       (0x411)
+        2015,  // SOC       (0x355)
+        2016,  // speed     (0x257)
+        2028,  // tmphs     (0x126)
+        2029,  // tmpm      (0x356)
+        2084,  // BMS_Vmin  (0x373)
+        2085,  // BMS_Vmax  (0x373)
+        2070,  // U12V      (0x528)
+        0
+    };
+    for (int i = 0; broadcastIds[i] != 0; i++) {
+        if (paramId == broadcastIds[i]) return;
+    }
+    sdoManager.requestRead(paramId);
 }
 
 // ============================================================================
@@ -233,11 +250,11 @@ bool CANDataManager::loadParametersFromJSON(const char* jsonString) {
             if (!param["id"].is<int>()) continue;
 
             CANParameter& p = parameters[parameterCount];
-            p.id       = param["id"].as<uint16_t>();
+            p.id            = param["id"].as<uint16_t>();
             strncpy(p.name, kv.key().c_str(), 31);
-            p.name[31] = '\0';
-            p.editable = param["isparam"] | false;
-            // Seed value from JSON so UI shows something before CAN updates
+            p.name[31]      = '\0';
+            p.editable      = param["isparam"] | false;
+            p.fromBroadcast = param["canid"].is<int>();  // has canid = comes from CAN broadcast
             p.setValue((int32_t)(param["value"] | 0.0f));
             parameterCount++;
         }
@@ -554,3 +571,6 @@ bool CANDataManager::sendMessage(uint32_t id, uint8_t* data, uint8_t length) {
     memcpy(msg.data, data, length);
     return enqueueTx(msg);
 }
+
+// ============================================================================
+// end of CANData.cpp

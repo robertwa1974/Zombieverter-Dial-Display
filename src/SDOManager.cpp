@@ -22,7 +22,7 @@ SDOManager::SDOManager()
 }
 
 // ============================================================================
-// init — create queues and start background task on core 0
+// init
 // ============================================================================
 
 bool SDOManager::init(SDOResultCallback callback) {
@@ -37,15 +37,14 @@ bool SDOManager::init(SDOResultCallback callback) {
         return false;
     }
 
-    // Pin to core 0 alongside CAN driver; 4 KB stack is plenty
     BaseType_t rc = xTaskCreatePinnedToCore(
         sdoTaskEntry,
         "SDOTask",
         4096,
         this,
-        5,              // priority — above CAN receive, below system
+        5,
         &taskHandle,
-        0               // core 0
+        0
     );
 
     if (rc != pdPASS) {
@@ -62,17 +61,15 @@ bool SDOManager::init(SDOResultCallback callback) {
 // Public queue API
 // ============================================================================
 
-bool SDOManager::requestRead(uint8_t paramId, bool highPriority) {
+bool SDOManager::requestRead(uint16_t paramId, bool highPriority) {
     SDORequest req = { SDO_REQ_READ, paramId, 0, highPriority };
     return xQueueSend(requestQueue, &req, 0) == pdTRUE;
 }
 
-bool SDOManager::requestWrite(uint8_t paramId, int32_t value, bool highPriority) {
+bool SDOManager::requestWrite(uint16_t paramId, int32_t value, bool highPriority) {
     SDORequest req = { SDO_REQ_WRITE, paramId, value, highPriority };
-    // Writes go to front of queue when high priority
-    if (highPriority) {
+    if (highPriority)
         return xQueueSendToFront(requestQueue, &req, 0) == pdTRUE;
-    }
     return xQueueSend(requestQueue, &req, 0) == pdTRUE;
 }
 
@@ -86,12 +83,11 @@ uint16_t SDOManager::getQueueDepth() {
 }
 
 // ============================================================================
-// processIncomingFrame — called from the CAN receive path (any task/core)
+// processIncomingFrame
 // ============================================================================
 
 void SDOManager::processIncomingFrame(const twai_message_t& msg) {
     if (msg.identifier == SDO_RX_ID) {
-        // Non-blocking — drop frame if queue is full rather than stall caller
         xQueueSend(rxFrameQueue, &msg, 0);
     }
 }
@@ -105,7 +101,7 @@ void SDOManager::sdoTaskEntry(void* arg) {
 }
 
 // ============================================================================
-// taskLoop — the async state machine
+// taskLoop
 // ============================================================================
 
 void SDOManager::taskLoop() {
@@ -114,15 +110,11 @@ void SDOManager::taskLoop() {
 
         switch (state) {
 
-        // ----------------------------------------------------------------
         case SDO_IDLE: {
-            // Enforce minimum inter-transaction gap
             if ((now - lastTransactionMs) < SDO_MIN_GAP_MS) {
                 vTaskDelay(pdMS_TO_TICKS(1));
                 break;
             }
-
-            // Pull next request from queue (block up to 10 ms to yield CPU)
             if (xQueueReceive(requestQueue, &currentRequest,
                               pdMS_TO_TICKS(10)) == pdTRUE) {
                 retryCount = 0;
@@ -131,7 +123,6 @@ void SDOManager::taskLoop() {
             break;
         }
 
-        // ----------------------------------------------------------------
         case SDO_SEND_REQUEST: {
             uint8_t cmd;
             int32_t val = 0;
@@ -154,27 +145,19 @@ void SDOManager::taskLoop() {
                 stateEnteredMs = millis();
                 state = SDO_WAIT_RESPONSE;
             } else {
-                // TX failed — treat as a retry-able failure
                 Serial.printf("[SDO] TX failed param %d\n", currentRequest.paramId);
                 state = SDO_RETRY;
             }
             break;
         }
 
-        // ----------------------------------------------------------------
         case SDO_WAIT_RESPONSE: {
             twai_message_t frame;
-
-            // Poll rx queue with a short wait so we don't spin-burn core 0
             if (xQueueReceive(rxFrameQueue, &frame,
                               pdMS_TO_TICKS(5)) == pdTRUE) {
                 handleFrame(frame);
-                // handleFrame() transitions state to SDO_PROCESS_RESPONSE or
-                // SDO_FAIL on abort — nothing more to do here this tick
                 break;
             }
-
-            // Check timeout
             if ((millis() - stateEnteredMs) >= SDO_TIMEOUT_MS) {
                 Serial.printf("[SDO] Timeout param %d (attempt %d)\n",
                               currentRequest.paramId, retryCount + 1);
@@ -187,22 +170,18 @@ void SDOManager::taskLoop() {
             break;
         }
 
-        // ----------------------------------------------------------------
         case SDO_PROCESS_RESPONSE:
-            // Arrived here from handleFrame() — nothing extra to do,
-            // transition back to IDLE and note completion time
             lastTransactionMs = millis();
             state = SDO_IDLE;
             break;
 
-        // ----------------------------------------------------------------
         case SDO_RETRY: {
             retryCount++;
             if (retryCount <= SDO_MAX_RETRIES) {
                 Serial.printf("[SDO] Retry %d/%d param %d\n",
                               retryCount, SDO_MAX_RETRIES,
                               currentRequest.paramId);
-                vTaskDelay(pdMS_TO_TICKS(20));  // Brief back-off
+                vTaskDelay(pdMS_TO_TICKS(20));
                 state = SDO_SEND_REQUEST;
             } else {
                 state = SDO_FAIL;
@@ -210,7 +189,6 @@ void SDOManager::taskLoop() {
             break;
         }
 
-        // ----------------------------------------------------------------
         case SDO_FAIL: {
             Serial.printf("[SDO] FAILED param %d after %d retries\n",
                           currentRequest.paramId, SDO_MAX_RETRIES);
@@ -228,20 +206,25 @@ void SDOManager::taskLoop() {
 
         } // switch
 
-        // Cooperative yield — keeps watchdog happy
         vTaskDelay(pdMS_TO_TICKS(1));
     }
 }
 
 // ============================================================================
-// handleFrame — called from taskLoop when an SDO frame arrives
+// handleFrame
+// Reconstruct full 16-bit paramId from index and subindex in response frame.
+// ZombieVerter format: index = 0x2100 | (paramId >> 8), subindex = paramId & 0xFF
 // ============================================================================
 
 void SDOManager::handleFrame(const twai_message_t& msg) {
     if (msg.data_length_code < 4) return;
 
-    uint8_t cmd     = msg.data[0];
-    uint8_t paramId = msg.data[3];   // Subindex = param ID in ZombieVerter format
+    uint8_t  cmd      = msg.data[0];
+    uint16_t index    = (uint16_t)(msg.data[1] | (msg.data[2] << 8));
+    uint8_t  subindex = msg.data[3];
+
+    // Reconstruct full 16-bit param ID from index and subindex
+    uint16_t paramId = (uint16_t)(((index & 0xFF) << 8) | subindex);
 
     switch (cmd) {
 
@@ -253,10 +236,8 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
                 (msg.data[6] << 16) |
                 (msg.data[7] << 24)
             );
-
             Serial.printf("[SDO] RX Read OK param %d = %d\n", paramId, value);
             deliverResult(true, paramId, value, false);
-
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                 successCount++;
                 xSemaphoreGive(statsMutex);
@@ -268,7 +249,6 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
         case SDO_RESP_WRITE: {
             Serial.printf("[SDO] RX Write OK param %d\n", paramId);
             deliverResult(true, paramId, currentRequest.value, true);
-
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                 successCount++;
                 xSemaphoreGive(statsMutex);
@@ -284,18 +264,14 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
                 (msg.data[6] << 16) |
                 (msg.data[7] << 24)
             );
-
             Serial.printf("[SDO] RX Abort param %d code 0x%08X (%s)\n",
                           paramId, abortCode, abortDescription(abortCode));
-
             deliverResult(false, paramId, 0,
                           currentRequest.type != SDO_REQ_READ, abortCode);
-
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                 failureCount++;
                 xSemaphoreGive(statsMutex);
             }
-            // Abort is final — no retry
             lastTransactionMs = millis();
             state = SDO_IDLE;
             break;
@@ -309,19 +285,27 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
 
 // ============================================================================
 // sendFrame
+// Calculates SDO index and subindex from full 16-bit param ID:
+//   index    = 0x2100 | (paramId >> 8)
+//   subindex = paramId & 0xFF
+// For params 1-255: index=0x2100, subindex=paramId  (same as before)
+// For spot 2006:    index=0x2107, subindex=0xD6
 // ============================================================================
 
-bool SDOManager::sendFrame(uint8_t cmd, uint8_t paramId, int32_t value) {
+bool SDOManager::sendFrame(uint8_t cmd, uint16_t paramId, int32_t value) {
     twai_message_t tx = {};
     tx.identifier       = SDO_TX_ID;
     tx.data_length_code = 8;
     tx.extd             = 0;
     tx.rtr              = 0;
 
+    uint16_t index    = SDO_BASE_INDEX | (paramId >> 8);
+    uint8_t  subindex = paramId & 0xFF;
+
     tx.data[0] = cmd;
-    tx.data[1] = SDO_INDEX_LO;
-    tx.data[2] = SDO_INDEX_HI;
-    tx.data[3] = paramId;
+    tx.data[1] = (uint8_t)(index & 0xFF);
+    tx.data[2] = (uint8_t)(index >> 8);
+    tx.data[3] = subindex;
     tx.data[4] = (uint8_t)( value        & 0xFF);
     tx.data[5] = (uint8_t)((value >>  8) & 0xFF);
     tx.data[6] = (uint8_t)((value >> 16) & 0xFF);
@@ -340,10 +324,10 @@ bool SDOManager::sendFrame(uint8_t cmd, uint8_t paramId, int32_t value) {
 }
 
 // ============================================================================
-// deliverResult — invoke callback (if set) with transaction outcome
+// deliverResult
 // ============================================================================
 
-void SDOManager::deliverResult(bool success, uint8_t paramId,
+void SDOManager::deliverResult(bool success, uint16_t paramId,
                                 int32_t value, bool isWrite,
                                 uint32_t abortCode) {
     if (!resultCallback) return;

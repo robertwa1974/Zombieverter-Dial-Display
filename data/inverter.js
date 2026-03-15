@@ -18,11 +18,6 @@
  *
  */
 
-
-/** @brief this is a little cache to store the current params/spot values. This
- * is here so that different functions can do look-ups without making a full
- * HTTP call to the inverter each time. */
-
 var paramsCache = {
 
     data: undefined,
@@ -100,6 +95,35 @@ var inverter = {
 		xmlhttp.send();
 	},
 
+	/** @brief fetch live spot values from /spot and merge into params */
+	fetchSpotValues: function(params, replyFunc)
+	{
+		var spotReq = new XMLHttpRequest();
+		spotReq.onload = function()
+		{
+			try {
+				var spot = JSON.parse(this.responseText);
+				for (var name in spot) {
+					if (name in params) {
+						params[name].value = spot[name];
+					}
+				}
+			} catch(ex) {
+				// ignore spot fetch errors — static values still show
+			}
+			paramsCache.setData(params);
+			if (replyFunc) replyFunc(params);
+		};
+		spotReq.onerror = function()
+		{
+			// spot endpoint failed — still call replyFunc with static values
+			paramsCache.setData(params);
+			if (replyFunc) replyFunc(params);
+		};
+		spotReq.open("GET", "/spot", true);
+		spotReq.send();
+	},
+
 	/** @brief get the params from the inverter */
 	getParamList: function(replyFunc, includeHidden)
 	{
@@ -132,8 +156,8 @@ var inverter = {
 			{
 				ui.hideCommunicationErrorBar();
 			}
-			paramsCache.setData(params);
-			if (replyFunc) replyFunc(params);
+			// Fetch live spot values and merge before calling replyFunc
+			inverter.fetchSpotValues(params, replyFunc);
 		});
 	},
 
@@ -163,14 +187,6 @@ var inverter = {
 			inverter.sendCmd("stream " + repeat + " " + items.join(','), process);
 	},
 
-
-	/** @brief given the 'unit' string provided by the inverter api, parse out
-	 * the key value pairs and return them in an array.
-	 * @param unit, e.g. "0=None, 1=UdcLow, 2=UdcHigh, 4=UdcBelowUdcSw"
-	 * Example return : ['None', 'UdcLow', 'UdcHigh',,'udcBelowUdcSw']. Note,
-	 * the extra comma is intentional. The position in the array is determined
-	 * by the index on the left hand side of the equals in the 'unit' string.
-	 */
 	parseEnum: function(unit)
 	{
 		var expr = /(\-{0,1}[0-9]+)=([a-zA-Z0-9_\-\.]+)[,\s]{0,2}|([a-zA-Z0-9_\-\.]+)[,\s]{1,2}/g;
@@ -183,15 +199,11 @@ var inverter = {
 			{
 				enums[res[1]] = res[2];
 			} while (res = expr.exec(unit))
-			//console.log('enums : ' + enums);
 			return enums;
 		}
 		return false;
 	},
 
-	/** @brief helper function, from a list of parameters send parameter with given index to inverter
-	 * @param params map of parameters (name -> value)
-	 * @param index numerical index which parameter to set */
 	setParam: function(params, index)
 	{
 		var keys = Object.keys(params);
@@ -202,28 +214,18 @@ var inverter = {
 			modal.appendToModal('large', "Setting " + key + " to " + params[key] + "<br>");
 			inverter.sendCmd("set " + key + " " + params[key], function(reply) {
 				modal.appendToModal('large', reply + "<br>");
-				// auto-scroll text in modal as it is added
 				modal.largeModalScrollToBottom();
 				inverter.setParam(params, index + 1);
 			});
 		}
 	},
 
-    /** @brief Add/Delete a CAN mapping
-     * @param direction, tx, rx, or del
-     * @param name, spot value name
-     * @param id, canid of message
-     * @param pos, offset within frame
-     * @param bits, length of field
-     * @param gain, multiplier
-     */
 	canMapping: function(direction, name, id, pos, bits, gain)
 	{
 		var cmd = "can " + direction + " " + name + " " + id + " " + pos + " " + bits + " " + gain;
 		inverter.sendCmd(cmd);
 	},
 
-    /** @brief get a list of files in the spiffs filesystem on the esp8266 */
 	getFiles: function(replyFunc)
 	{
 		var filesRequest = new XMLHttpRequest();
@@ -240,7 +242,6 @@ var inverter = {
 		filesRequest.send();
 	},
 
-	/** @brief delete a file from the spiffs filessytem on the esp8266 */
 	deleteFile: function(filename, replyFunc)
 	{
 		var deleteFileRequest = new XMLHttpRequest();
@@ -256,6 +257,5 @@ var inverter = {
 		deleteFileRequest.open("DELETE", "/edit?f=" + filename, true);
 		deleteFileRequest.send();
 	}
-
 
 };

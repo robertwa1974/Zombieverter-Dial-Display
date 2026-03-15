@@ -78,6 +78,28 @@ bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
     return true;
 }
 
+void UIManager::updateWifiScreen(const String& ip) {
+    if (wifi_ip_label) {
+        lv_label_set_text_fmt(wifi_ip_label, "IP: %s", ip.c_str());
+    }
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "Status: Active");
+        lv_obj_set_style_text_color(wifi_status_label,
+            lv_palette_main(LV_PALETTE_GREEN), 0);
+    }
+}
+
+void UIManager::resetWifiScreen() {
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "Status: Inactive");
+        lv_obj_set_style_text_color(wifi_status_label,
+            lv_color_white(), 0);
+    }
+    if (wifi_ip_label) {
+        lv_label_set_text(wifi_ip_label, "IP: 192.168.4.1");
+    }
+}
+
 void UIManager::lvgl_flush_cb(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
@@ -104,22 +126,27 @@ void UIManager::update() {
         lastUpdateTime = millis();
         
         switch (currentScreen) {
-            case SCREEN_LOCK:       break;
-            case SCREEN_DASHBOARD:  updateDashboard();   break;
-            case SCREEN_POWER:      updatePower();       break;
-            case SCREEN_TEMPERATURE:updateTemperature(); break;
-            case SCREEN_BATTERY:    updateBattery();     break;
-            case SCREEN_BMS:        updateBMS();         break;
-            case SCREEN_GEAR:       updateGear();        break;
-            case SCREEN_MOTOR:      updateMotor();       break;
-            case SCREEN_REGEN:      updateRegen();       break;
-            default:                break;
+            case SCREEN_LOCK:        break;
+            case SCREEN_DASHBOARD:   updateDashboard();   break;
+            case SCREEN_POWER:       updatePower();       break;
+            case SCREEN_TEMPERATURE: updateTemperature(); break;
+            case SCREEN_BATTERY:     updateBattery();     break;
+            case SCREEN_BMS:         updateBMS();         break;
+            case SCREEN_GEAR:        updateGear();        break;
+            case SCREEN_MOTOR:       updateMotor();       break;
+            case SCREEN_REGEN:       updateRegen();       break;
+            case SCREEN_SETTINGS:    updateSettings();    break;
+            default:                 break;
         }
     }
 }
 
 void UIManager::setScreen(ScreenID screen) {
     if (screen >= SCREEN_COUNT) return;
+    // When leaving an editable screen, always exit edit mode
+    if (isEditableScreen() && screen != currentScreen) {
+        editMode = false;
+    }
     currentScreen = screen;
     if (screens[screen]) {
         lv_scr_load_anim(screens[screen], LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
@@ -241,7 +268,7 @@ void UIManager::createDashboardScreen() {
     lv_obj_align(dash_voltage_label, LV_ALIGN_TOP_MID, 0, 10);
     
     dash_power_label = lv_label_create(screens[SCREEN_DASHBOARD]);
-    lv_label_set_text(dash_power_label, "0.0kW");
+    lv_label_set_text(dash_power_label, "0kW");
     lv_obj_set_style_text_font(dash_power_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(dash_power_label, lv_color_white(), 0);
     lv_obj_align(dash_power_label, LV_ALIGN_BOTTOM_MID, 0, -10);
@@ -285,7 +312,7 @@ void UIManager::createPowerScreen() {
     power_needle = lv_meter_add_needle_line(power_meter, scale, 4, lv_color_white(), -10);
     
     power_label = lv_label_create(screens[SCREEN_POWER]);
-    lv_label_set_text(power_label, "0.0");
+    lv_label_set_text(power_label, "0");
     lv_obj_set_style_text_font(power_label, &lv_font_montserrat_40, 0);
     lv_obj_set_style_text_color(power_label, lv_color_white(), 0);
     lv_obj_align(power_label, LV_ALIGN_CENTER, 0, -10);
@@ -333,7 +360,7 @@ void UIManager::createTemperatureScreen() {
     lv_obj_clear_flag(temp_motor_arc, LV_OBJ_FLAG_CLICKABLE);
     
     temp_motor_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
-    lv_label_set_text(temp_motor_label, "Motor\n--°C");
+    lv_label_set_text(temp_motor_label, "Motor\n--\xC2\xB0""C");
     lv_obj_set_style_text_font(temp_motor_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(temp_motor_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(temp_motor_label, LV_TEXT_ALIGN_CENTER, 0);
@@ -353,14 +380,14 @@ void UIManager::createTemperatureScreen() {
     lv_obj_clear_flag(temp_inverter_arc, LV_OBJ_FLAG_CLICKABLE);
     
     temp_inverter_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
-    lv_label_set_text(temp_inverter_label, "Inverter\n--°C");
+    lv_label_set_text(temp_inverter_label, "Inverter\n--\xC2\xB0""C");
     lv_obj_set_style_text_font(temp_inverter_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(temp_inverter_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(temp_inverter_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(temp_inverter_label, LV_ALIGN_RIGHT_MID, -35, 0);
     
     temp_battery_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
-    lv_label_set_text(temp_battery_label, "Battery: --°C");
+    lv_label_set_text(temp_battery_label, "Battery: --\xC2\xB0""C");
     lv_obj_set_style_text_font(temp_battery_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(temp_battery_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_align(temp_battery_label, LV_ALIGN_BOTTOM_MID, 0, -15);
@@ -418,7 +445,7 @@ void UIManager::createBatteryScreen() {
     lv_obj_align(battery_current_label, LV_ALIGN_BOTTOM_MID, 0, -20);
     
     battery_temp_label = lv_label_create(screens[SCREEN_BATTERY]);
-    lv_label_set_text(battery_temp_label, "Temp: --°C");
+    lv_label_set_text(battery_temp_label, "Temp: --\xC2\xB0""C");
     lv_obj_set_style_text_font(battery_temp_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(battery_temp_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_align(battery_temp_label, LV_ALIGN_BOTTOM_MID, 0, -5);
@@ -456,7 +483,7 @@ void UIManager::createBMSScreen() {
     lv_obj_add_flag(bms_soc_bar, LV_OBJ_FLAG_HIDDEN);
     
     bms_temp_max_label = lv_label_create(screens[SCREEN_BMS]);
-    lv_label_set_text(bms_temp_max_label, "Max Temp: --°C");
+    lv_label_set_text(bms_temp_max_label, "Max Temp: --\xC2\xB0""C");
     lv_obj_set_style_text_font(bms_temp_max_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(bms_temp_max_label, lv_color_white(), 0);
     lv_obj_align(bms_temp_max_label, LV_ALIGN_BOTTOM_MID, 0, -30);
@@ -497,7 +524,7 @@ void UIManager::createGearScreen() {
     }
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_GEAR]);
-    lv_label_set_text(inst, "Rotate to change");
+    lv_label_set_text(inst, "Click to edit");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
     lv_obj_align(inst, LV_ALIGN_CENTER, 0, 30);
@@ -538,7 +565,7 @@ void UIManager::createMotorScreen() {
     }
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_MOTOR]);
-    lv_label_set_text(inst, "Rotate to change");
+    lv_label_set_text(inst, "Click to edit");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
     lv_obj_align(inst, LV_ALIGN_CENTER, 0, 30);
@@ -575,7 +602,7 @@ void UIManager::createRegenScreen() {
     lv_obj_align(regen_value_label, LV_ALIGN_CENTER, 0, 0);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_REGEN]);
-    lv_label_set_text(inst, "Rotate to adjust\n-35% to 0%");
+    lv_label_set_text(inst, "Click to edit");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
@@ -589,41 +616,43 @@ void UIManager::createWiFiScreen() {
     lv_obj_t* title = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(title, "WiFi CONFIG");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(title, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_set_style_text_color(title, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
     
     wifi_status_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_status_label, "Status: Inactive");
-    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(wifi_status_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(wifi_status_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_status_label, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_align(wifi_status_label, LV_ALIGN_TOP_MID, 0, 32);
     
     wifi_ssid_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_ssid_label, "SSID:\nZombieVerter-Display");
     lv_obj_set_style_text_font(wifi_ssid_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(wifi_ssid_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(wifi_ssid_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_ssid_label, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align(wifi_ssid_label, LV_ALIGN_CENTER, 0, -30);
     
     wifi_password_label = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(wifi_password_label, "Password:\nzombieverter");
+    lv_label_set_text(wifi_password_label, "PW: zombieverter");
     lv_obj_set_style_text_font(wifi_password_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(wifi_password_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(wifi_password_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_password_label, LV_ALIGN_CENTER, 0, 20);
+    lv_obj_align(wifi_password_label, LV_ALIGN_CENTER, 0, 5);
     
     wifi_ip_label = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(wifi_ip_label, "IP: ---");
-    lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_12, 0);
+    lv_label_set_text(wifi_ip_label, "IP: 192.168.4.1");
+    lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(wifi_ip_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(wifi_ip_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_style_text_align(wifi_ip_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, 35);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(inst, "Hold button to activate");
+    lv_label_set_text(inst, "Click button to deactivate");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
-    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(inst, LV_ALIGN_CENTER, 0, 65);
 }
 
 void UIManager::createSettingsScreen() {
@@ -637,10 +666,10 @@ void UIManager::createSettingsScreen() {
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
     
     settings_can_status_label = lv_label_create(screens[SCREEN_SETTINGS]);
-    lv_label_set_text(settings_can_status_label, "CAN: Connected");
+    lv_label_set_text(settings_can_status_label, "CAN: --");
     lv_obj_set_style_text_font(settings_can_status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(settings_can_status_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_align(settings_can_status_label, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_align(settings_can_status_label, LV_ALIGN_TOP_MID, 0, 40);
     
     settings_param_count_label = lv_label_create(screens[SCREEN_SETTINGS]);
     lv_label_set_text(settings_param_count_label, "Parameters: 0");
@@ -649,11 +678,11 @@ void UIManager::createSettingsScreen() {
     lv_obj_align(settings_param_count_label, LV_ALIGN_CENTER, 0, -10);
     
     settings_version_label = lv_label_create(screens[SCREEN_SETTINGS]);
-    lv_label_set_text(settings_version_label, "Version: 1.1.0\nLVGL UI");
+    lv_label_set_text(settings_version_label, "VCU FW: --\nDisplay v1.1");
     lv_obj_set_style_text_font(settings_version_label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(settings_version_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(settings_version_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(settings_version_label, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_align(settings_version_label, LV_ALIGN_CENTER, 0, 20);
     
     lv_obj_t* hw_info = lv_label_create(screens[SCREEN_SETTINGS]);
     lv_label_set_text(hw_info, "M5Stack Dial\nESP32-S3");
@@ -665,34 +694,24 @@ void UIManager::createSettingsScreen() {
 
 // ============================================================================
 // UPDATE FUNCTIONS
-// Parameter ID reference:
-//   speed=2, udc(voltage)=3, tmphs(inverter temp)=7, tmpm(motor temp)=8
-//   gear=27, regenmax=61, motactive=129
-//   soc=100(broadcast), idc(current)=101(broadcast), battemp=102(broadcast)
 // ============================================================================
 
 void UIManager::updateDashboard() {
     if (!canManager) return;
-    
-    // Speed/RPM — ID 2
-    CANParameter* rpm = canManager->getParameter(2);
+
+    CANParameter* rpm = canManager->getParameterByName("speed");
     if (rpm) {
-        int32_t value = rpm->getValueAsInt() / 100;  // scale to x100
+        int32_t value = rpm->getValueAsInt() / 100;
         lv_meter_set_indicator_value(dash_rpm_meter, dash_rpm_needle, value);
         lv_meter_set_indicator_end_value(dash_rpm_meter, dash_rpm_arc, value);
     }
-    
-    // Voltage — ID 3
-    CANParameter* voltage = canManager->getParameter(3);
+
+    CANParameter* voltage = canManager->getParameterByName("udc");
     if (voltage) {
         lv_label_set_text_fmt(dash_voltage_label, "%dV", voltage->getValueAsInt());
     }
-    
-    // Power — not in params.json yet, skip gracefully
-    // (IVT-S 0x527 not mapped to a param; add power param ID 103 later if needed)
 
-    // SOC ring — ID 100
-    CANParameter* soc = canManager->getParameter(100);
+    CANParameter* soc = canManager->getParameterByName("SOC");
     if (soc) {
         int32_t value = soc->getValueAsInt();
         lv_arc_set_value(dash_soc_arc, value);
@@ -704,20 +723,28 @@ void UIManager::updateDashboard() {
             lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
         }
     }
+
+    CANParameter* current = canManager->getParameterByName("idc");
+    if (voltage && current) {
+        int32_t kw = (voltage->getValueAsInt() * current->getValueAsInt()) / 1000;
+        lv_label_set_text_fmt(dash_power_label, "%dkW", kw);
+    }
 }
 
 void UIManager::updatePower() {
     if (!canManager) return;
-    
-    // No dedicated power param yet — show voltage and SOC instead
-    CANParameter* voltage = canManager->getParameter(3);
-    if (voltage) {
-        int32_t v = voltage->getValueAsInt();
-        lv_label_set_text_fmt(power_label, "%dV", v);
+
+    CANParameter* voltage = canManager->getParameterByName("udc");
+    CANParameter* current = canManager->getParameterByName("idc");
+
+    if (voltage && current) {
+        int32_t kw = (voltage->getValueAsInt() * current->getValueAsInt()) / 1000;
+        lv_meter_set_indicator_value(power_meter, power_needle, kw);
+        lv_meter_set_indicator_end_value(power_meter, power_arc, kw);
+        lv_label_set_text_fmt(power_label, "%d", kw);
     }
-    
-    // SOC — ID 100
-    CANParameter* soc = canManager->getParameter(100);
+
+    CANParameter* soc = canManager->getParameterByName("SOC");
     if (soc) {
         int32_t value = soc->getValueAsInt();
         lv_label_set_text_fmt(power_soc_label, "SOC: %d%%", value);
@@ -733,13 +760,12 @@ void UIManager::updatePower() {
 
 void UIManager::updateTemperature() {
     if (!canManager) return;
-    
-    // Motor temp — ID 8 (tmpm)
-    CANParameter* motorTemp = canManager->getParameter(8);
+
+    CANParameter* motorTemp = canManager->getParameterByName("tmpm");
     if (motorTemp) {
         int32_t value = motorTemp->getValueAsInt();
         lv_arc_set_value(temp_motor_arc, value);
-        lv_label_set_text_fmt(temp_motor_label, "Motor\n%d°C", value);
+        lv_label_set_text_fmt(temp_motor_label, "Motor\n%d\xC2\xB0""C", value);
         if (value < 60) {
             lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
             lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_GREEN), 0);
@@ -751,13 +777,12 @@ void UIManager::updateTemperature() {
             lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_RED), 0);
         }
     }
-    
-    // Inverter temp — ID 7 (tmphs)
-    CANParameter* invTemp = canManager->getParameter(7);
+
+    CANParameter* invTemp = canManager->getParameterByName("tmphs");
     if (invTemp) {
         int32_t value = invTemp->getValueAsInt();
         lv_arc_set_value(temp_inverter_arc, value);
-        lv_label_set_text_fmt(temp_inverter_label, "Inverter\n%d°C", value);
+        lv_label_set_text_fmt(temp_inverter_label, "Inverter\n%d\xC2\xB0""C", value);
         if (value < 60) {
             lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
             lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_GREEN), 0);
@@ -769,19 +794,17 @@ void UIManager::updateTemperature() {
             lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_RED), 0);
         }
     }
-    
-    // Shunt/battery temp — ID 102 (broadcast only)
-    CANParameter* batTemp = canManager->getParameter(102);
+
+    CANParameter* batTemp = canManager->getParameterByName("tmpaux");
     if (batTemp) {
-        lv_label_set_text_fmt(temp_battery_label, "Battery: %d°C", batTemp->getValueAsInt());
+        lv_label_set_text_fmt(temp_battery_label, "Battery: %d\xC2\xB0""C", batTemp->getValueAsInt());
     }
 }
 
 void UIManager::updateBattery() {
     if (!canManager) return;
-    
-    // SOC — ID 100 (broadcast from 0x355)
-    CANParameter* soc = canManager->getParameter(100);
+
+    CANParameter* soc = canManager->getParameterByName("SOC");
     if (soc) {
         int32_t value = soc->getValueAsInt();
         lv_meter_set_indicator_value(battery_soc_meter, battery_soc_needle, value);
@@ -789,41 +812,33 @@ void UIManager::updateBattery() {
         lv_label_set_text_fmt(battery_soc_label, "%d", value);
         if (value > 80) {
             lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
         } else if (value > 20) {
             lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
-            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
         } else {
             lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_RED), 0);
-            lv_obj_set_style_arc_color(battery_soc_meter, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
         }
     }
-    
-    // Voltage — ID 3 (udc)
-    CANParameter* voltage = canManager->getParameter(3);
+
+    CANParameter* voltage = canManager->getParameterByName("udc");
     if (voltage) {
         lv_label_set_text_fmt(battery_voltage_label, "Voltage: %dV", voltage->getValueAsInt());
     }
-    
-    // Current — ID 101 (broadcast from IVT-S 0x411)
-    CANParameter* current = canManager->getParameter(101);
+
+    CANParameter* current = canManager->getParameterByName("idc");
     if (current) {
-        int32_t value = current->getValueAsInt();
-        lv_label_set_text_fmt(battery_current_label, "Current: %d.%dA", value / 10, abs(value % 10));
+        lv_label_set_text_fmt(battery_current_label, "Current: %dA", current->getValueAsInt());
     }
-    
-    // Battery/shunt temp — ID 102 (broadcast from IVT-S 0x526)
-    CANParameter* temp = canManager->getParameter(102);
+
+    CANParameter* temp = canManager->getParameterByName("tmpm");
     if (temp) {
-        lv_label_set_text_fmt(battery_temp_label, "Temp: %d°C", temp->getValueAsInt());
+        lv_label_set_text_fmt(battery_temp_label, "Temp: %d\xC2\xB0""C", temp->getValueAsInt());
     }
 }
 
 void UIManager::updateBMS() {
     if (!canManager) return;
-    
-    // SOC bar — ID 100
-    CANParameter* soc = canManager->getParameter(100);
+
+    CANParameter* soc = canManager->getParameterByName("SOC");
     if (soc) {
         lv_bar_set_value(bms_soc_bar, soc->getValueAsInt(), LV_ANIM_ON);
     }
@@ -831,9 +846,19 @@ void UIManager::updateBMS() {
 
 void UIManager::updateGear() {
     if (!canManager) return;
-    
-    // Gear — ID 27
-    CANParameter* gear = canManager->getParameter(27);
+
+    // Show edit mode hint in title
+    lv_obj_t* screen = screens[SCREEN_GEAR];
+    if (screen) {
+        lv_obj_t* title = lv_obj_get_child(screen, 0);
+        if (title) {
+            lv_label_set_text(title, editMode ? "GEAR  [EDITING]" : "GEAR SELECTION");
+            lv_obj_set_style_text_color(title,
+                editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_color_white(), 0);
+        }
+    }
+
+    CANParameter* gear = canManager->getParameterByName("Gear");
     if (gear) {
         int32_t value = gear->getValueAsInt();
         const char* gearNames[] = {"LOW", "HIGH", "AUTO", "HI/LO"};
@@ -854,9 +879,18 @@ void UIManager::updateGear() {
 
 void UIManager::updateMotor() {
     if (!canManager) return;
-    
-    // Motor active — ID 129
-    CANParameter* motor = canManager->getParameter(129);
+
+    lv_obj_t* screen = screens[SCREEN_MOTOR];
+    if (screen) {
+        lv_obj_t* title = lv_obj_get_child(screen, 0);
+        if (title) {
+            lv_label_set_text(title, editMode ? "MOTOR  [EDITING]" : "MOTOR MODE");
+            lv_obj_set_style_text_color(title,
+                editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_color_white(), 0);
+        }
+    }
+
+    CANParameter* motor = canManager->getParameterByName("MotActive");
     if (motor) {
         int32_t value = motor->getValueAsInt();
         const char* motorNames[] = {"MG1 only", "MG2 only", "MG1+MG2", "Blended"};
@@ -877,11 +911,17 @@ void UIManager::updateMotor() {
 
 void UIManager::updateRegen() {
     if (!canManager) return;
-    
-    // Regen max — ID 61
-    CANParameter* regen = canManager->getParameter(61);
+
+    lv_obj_t* screen = screens[SCREEN_REGEN];
+    if (screen) {
+        lv_label_set_text(regen_title_label, editMode ? "REGEN  [EDITING]" : "REGEN MAX");
+        lv_obj_set_style_text_color(regen_title_label,
+            editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    }
+
+    CANParameter* regen = canManager->getParameterByName("regenmax");
     if (regen) {
-        int32_t value = regen->getValueAsInt();  // -35 to 0
+        int32_t value = regen->getValueAsInt();
         lv_arc_set_value(regen_arc, value);
         lv_label_set_text_fmt(regen_value_label, "%d%%", value);
         int absValue = abs(value);
@@ -898,6 +938,42 @@ void UIManager::updateRegen() {
     }
 }
 
+void UIManager::updateSettings() {
+    if (!canManager) return;
+
+    // VCU firmware version — value is an enum index, unit field has e.g. "4=2.30.A"
+    // Parse the version string from the unit field via the param name lookup
+    if (settings_version_label) {
+        // The version param's value is e.g. 4, and unit is "4=2.30.A"
+        // We just show the raw value divided appropriately — VCU reports 4 = v2.30
+        // Map known values: 4 = 2.30.A
+        CANParameter* ver = canManager->getParameterByName("version");
+        if (ver) {
+            // version value 4 maps to "2.30.A" per the unit string
+            // Use a simple lookup for known versions
+            int32_t v = ver->getValueAsInt();
+            if (v == 4) {
+                lv_label_set_text(settings_version_label, "VCU FW: v2.30.A\nDisplay v1.1");
+            } else {
+                lv_label_set_text_fmt(settings_version_label, "VCU FW: v%d\nDisplay v1.1", v);
+            }
+        }
+    }
+
+    if (settings_param_count_label) {
+        lv_label_set_text_fmt(settings_param_count_label, "Parameters: %d",
+            canManager->getParameterCount());
+    }
+
+    if (settings_can_status_label) {
+        bool connected = canManager->isConnected();
+        lv_label_set_text(settings_can_status_label,
+            connected ? "CAN: Connected" : "CAN: No signal");
+        lv_obj_set_style_text_color(settings_can_status_label,
+            connected ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_RED), 0);
+    }
+}
+
 // ============================================================================
 // EDIT MODE
 // ============================================================================
@@ -905,14 +981,6 @@ void UIManager::updateRegen() {
 void UIManager::toggleEditMode() {
     if (isEditableScreen()) {
         editMode = !editMode;
-        lv_obj_t* screen = screens[currentScreen];
-        if (screen) {
-            lv_obj_t* title = lv_obj_get_child(screen, 0);
-            if (title) {
-                lv_obj_set_style_text_color(title,
-                    editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_color_white(), 0);
-            }
-        }
     }
 }
 

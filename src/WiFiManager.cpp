@@ -4,11 +4,9 @@
 // Implements the openinverter/jamiejones85 esp32-web-interface API surface so
 // the existing HTML/JS/CSS web assets work without modification.
 //
-// The original firmware routes /cmd over UART to a separate MCU.
-// This implementation routes the same /cmd calls to CANDataManager,
-// which reads/writes parameters via SDO over CAN.
-//
-// Uses ESPAsyncWebServer for reliable concurrent file serving from SPIFFS.
+// Uses ESPAsyncWebServer for concurrent file serving.
+// Uses synchronous SDO polling (like jamiejones CAN backend) during WiFi mode
+// so /cmd?cmd=json returns live values and /cmd?cmd=get works correctly.
 // =============================================================================
 
 #include "WiFiManager.h"
@@ -21,6 +19,73 @@
 #include <Update.h>
 #include <SPIFFS.h>
 #include <FS.h>
+#include <ArduinoJson.h>
+#include "driver/twai.h"
+
+// ---------------------------------------------------------------------------
+// SDO constants (mirroring jamiejones oi_can.cpp)
+// ---------------------------------------------------------------------------
+#define SDO_READ              (2 << 5)
+#define SDO_WRITE             ((1 << 5) | (1 << 1) | 1)
+#define SDO_WRITE_REPLY       (3 << 5)
+#define SDO_READ_REPLY        ((2 << 5) | (1 << 1) | 1)
+#define SDO_ABORT             0x80
+#define SDO_INDEX_PARAM_UID   0x2100
+#define SDO_INDEX_COMMANDS    0x5002
+#define SDO_CMD_SAVE          0
+
+// ---------------------------------------------------------------------------
+// Synchronous SDO helpers — used during WiFi mode when LVGL is suspended
+// Sends a raw SDO request and waits up to timeoutMs for a response.
+// Returns the raw int32 value (caller applies /32 scaling if needed).
+// ---------------------------------------------------------------------------
+static bool sdoRequestSync(uint8_t nodeId, uint16_t index, uint8_t subIndex,
+                           twai_message_t* response, uint32_t timeoutMs = 50) {
+    twai_message_t tx;
+    tx.extd = false;
+    tx.identifier = 0x600 | nodeId;
+    tx.data_length_code = 8;
+    tx.data[0] = SDO_READ;
+    tx.data[1] = index & 0xFF;
+    tx.data[2] = index >> 8;
+    tx.data[3] = subIndex;
+    tx.data[4] = tx.data[5] = tx.data[6] = tx.data[7] = 0;
+
+    if (twai_transmit(&tx, pdMS_TO_TICKS(10)) != ESP_OK) return false;
+
+    uint32_t deadline = millis() + timeoutMs;
+    while (millis() < deadline) {
+        if (twai_receive(response, pdMS_TO_TICKS(5)) == ESP_OK) {
+            if (response->identifier == (uint32_t)(0x580 | nodeId)) return true;
+        }
+    }
+    return false;
+}
+
+static bool sdoWriteSync(uint8_t nodeId, uint16_t index, uint8_t subIndex,
+                         uint32_t value, uint32_t timeoutMs = 50) {
+    twai_message_t tx, rx;
+    tx.extd = false;
+    tx.identifier = 0x600 | nodeId;
+    tx.data_length_code = 8;
+    tx.data[0] = SDO_WRITE;
+    tx.data[1] = index & 0xFF;
+    tx.data[2] = index >> 8;
+    tx.data[3] = subIndex;
+    *(uint32_t*)&tx.data[4] = value;
+
+    if (twai_transmit(&tx, pdMS_TO_TICKS(10)) != ESP_OK) return false;
+
+    uint32_t deadline = millis() + timeoutMs;
+    while (millis() < deadline) {
+        if (twai_receive(&rx, pdMS_TO_TICKS(5)) == ESP_OK) {
+            if (rx.identifier == (uint32_t)(0x580 | nodeId)) {
+                return rx.data[0] != SDO_ABORT;
+            }
+        }
+    }
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // Module-level server instance
@@ -62,6 +127,7 @@ void WiFiManager::startAP() {
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+    delay(100); // let AP stabilize before starting server
 
     Serial.printf("[WiFi] AP started: %s / %s\n", WIFI_AP_SSID, WIFI_AP_PASSWORD);
     Serial.printf("[WiFi] IP: %s\n", WiFi.softAPIP().toString().c_str());
@@ -164,6 +230,15 @@ void WiFiManager::startServer() {
     );
 
     // -----------------------------------------------------------------------
+    // /spot — live parameter values from RAM, no SPIFFS
+    // Returns {"name":value,...} for all parameters with live CAN data
+    // -----------------------------------------------------------------------
+    server->on("/spot", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance || !instance->can) { request->send(200, "application/json", "{}"); return; }
+        instance->handleSpot(request);
+    });
+
+    // -----------------------------------------------------------------------
     // /version
     // -----------------------------------------------------------------------
     server->on("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -233,11 +308,7 @@ void WiFiManager::handleCmd(AsyncWebServerRequest* request) {
     AsyncWebServerResponse* resp = nullptr;
 
     if (cmd == "json") {
-        // Serve params.json directly from SPIFFS — fast, no heap allocation.
-        // The JS polls /cmd?cmd=get for live values after initial load.
-        if (!serveFile(request, "/params.json")) {
-            request->send(200, "text/json", "{}");
-        }
+        serveFile(request, "/params.json");
         return;
 
     } else if (cmd.startsWith("get ")) {
@@ -285,11 +356,10 @@ String WiFiManager::cmdJson() {
 }
 
 // ---------------------------------------------------------------------------
-// cmdGet
+// cmdGet — returns live values from local CAN parameter cache
+// The cache is updated continuously from CAN broadcasts and SDO polling
 // ---------------------------------------------------------------------------
 String WiFiManager::cmdGet(const String& names) {
-    if (!can) return "";
-
     String response;
     String nameList = names;
     nameList.trim();
@@ -308,16 +378,8 @@ String WiFiManager::cmdGet(const String& names) {
         name.trim();
         if (name.length() == 0) continue;
 
-        CANParameter* param = nullptr;
-        for (uint16_t i = 0; i < can->getParameterCount(); i++) {
-            CANParameter* p = can->getParameterByIndex(i);
-            if (p && name.equals(p->name)) {
-                param = p;
-                break;
-            }
-        }
-
         char valBuf[32];
+        CANParameter* param = can ? can->getParameterByName(name.c_str()) : nullptr;
         if (param) {
             snprintf(valBuf, sizeof(valBuf), "%.2f", (float)param->getValueAsInt());
         } else {
@@ -326,27 +388,35 @@ String WiFiManager::cmdGet(const String& names) {
         response += valBuf;
         response += "\n";
     }
-
     return response;
 }
 
 // ---------------------------------------------------------------------------
-// cmdSet
+// cmdSet — writes a parameter value via synchronous SDO
 // ---------------------------------------------------------------------------
 String WiFiManager::cmdSet(const String& name, const String& value) {
     if (!can) return "0\n";
 
-    for (uint16_t i = 0; i < can->getParameterCount(); i++) {
-        CANParameter* p = can->getParameterByIndex(i);
-        if (p && name.equals(p->name)) {
-            int32_t intVal = (int32_t)value.toFloat();
-            can->setParameter(p->id, intVal);
-            Serial.printf("[WiFi] Set %s = %d via web\n", p->name, intVal);
-            return "1\n";
-        }
+    // Look up param in local cache to get id
+    CANParameter* p = can->getParameterByName(name.c_str());
+    if (!p) {
+        Serial.printf("[WiFi] Set: param '%s' not found\n", name.c_str());
+        return "0\n";
     }
 
-    Serial.printf("[WiFi] Set: param '%s' not found\n", name.c_str());
+    double dval = value.toDouble();
+    uint32_t raw = (uint32_t)(int32_t)(dval * 32.0);
+
+    uint16_t index = SDO_INDEX_PARAM_UID | (p->id >> 8);
+    uint8_t  sub   = p->id & 0xFF;
+
+    if (sdoWriteSync(CAN_NODE_ID, index, sub, raw)) {
+        Serial.printf("[WiFi] Set %s = %.2f\n", name.c_str(), dval);
+        p->setValue((int32_t)dval);
+        return "1\n";
+    }
+
+    Serial.printf("[WiFi] Set %s failed\n", name.c_str());
     return "0\n";
 }
 
@@ -517,4 +587,32 @@ bool WiFiManager::serveFile(AsyncWebServerRequest* request, const String& overri
     }
 
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// handleSpot — build live values JSON purely from in-memory parameter cache
+// No SPIFFS, no deserialization — just loop over parameters[] array
+// ---------------------------------------------------------------------------
+void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
+    String json = "{";
+    bool first = true;
+    uint16_t count = can->getParameterCount();
+
+    for (uint16_t i = 0; i < count; i++) {
+        CANParameter* p = can->getParameterByIndex(i);
+        if (!p || p->lastUpdateTime == 0) continue;
+
+        if (!first) json += ",";
+        json += "\"";
+        json += p->name;
+        json += "\":";
+        json += p->valueInt;
+        first = false;
+    }
+    json += "}";
+
+    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    resp->addHeader("Cache-Control", "no-cache");
+    request->send(resp);
 }
