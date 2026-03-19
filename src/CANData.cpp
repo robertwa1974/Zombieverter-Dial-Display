@@ -72,12 +72,195 @@ bool CANDataManager::init() {
         return false;
     }
     Serial.println("[CAN] TWAI initialized at 500kbps");
+    // Note: SDOManager is NOT started here — call initSDO() after fetchParamsFromVCU()
+    return true;
+}
 
+bool CANDataManager::initSDO() {
     if (!sdoManager.init(onSDOResult)) {
         Serial.println("[CAN] SDOManager init failed");
         return false;
     }
+    Serial.println("[CAN] SDOManager initialized");
     return true;
+}
+
+// ============================================================================
+// sdoSendRaw — send 8 bytes directly via TWAI (bypasses SDOManager)
+// Used only during fetchParamsFromVCU before SDOManager starts
+// ============================================================================
+
+bool CANDataManager::sdoSendRaw(uint8_t* data8) {
+    twai_message_t tx = {};
+    tx.identifier       = SDO_TX_ID;
+    tx.data_length_code = 8;
+    tx.extd             = 0;
+    memcpy(tx.data, data8, 8);
+    return twai_transmit(&tx, pdMS_TO_TICKS(10)) == ESP_OK;
+}
+
+// ============================================================================
+// sdoReceiveRaw — wait for an SDO response frame directly from TWAI
+// Discards non-SDO frames (CAN broadcasts etc.)
+// ============================================================================
+
+bool CANDataManager::sdoReceiveRaw(twai_message_t* frame, uint32_t timeoutMs) {
+    uint32_t deadline = millis() + timeoutMs;
+    while (millis() < deadline) {
+        if (twai_receive(frame, pdMS_TO_TICKS(5)) == ESP_OK) {
+            if (frame->identifier == SDO_RX_ID) return true;
+        }
+    }
+    return false;
+}
+
+// ============================================================================
+// fetchParamsFromVCU — download parameter schema from VCU via SDO segmented
+// transfer on index 0x5001. Saves result to SPIFFS as /params.json and
+// loads into parameters[].
+//
+// Must be called AFTER init() (TWAI running) but the SDOManager internal
+// task is already started — however fetchParamsFromVCU drains the TWAI RX
+// directly before SDOManager can consume any frames, so we pause SDOManager
+// by calling this immediately after init() before any requestParameter calls.
+//
+// Blocks for up to ~10 seconds for a 30KB download.
+// ============================================================================
+
+#define SDO_IDX_STRINGS_LO  0x01
+#define SDO_IDX_STRINGS_HI  0x50
+#define SDO_CMD_UPLOAD_REQ  0x40
+#define SDO_CMD_SEGMENT_REQ 0x60
+#define SDO_TOGGLE_BIT_MASK 0x10
+#define SDO_LAST_SEGMENT    0x01
+#define SDO_ABORT_BYTE      0x80
+
+FetchResult CANDataManager::fetchParamsFromVCU() {
+    Serial.println("[Fetch] Starting VCU parameter download via SDO...");
+
+    // Step 1: Send initiate upload request for index 0x5001 subindex 0
+    uint8_t initReq[8] = {
+        SDO_CMD_UPLOAD_REQ,
+        SDO_IDX_STRINGS_LO,
+        SDO_IDX_STRINGS_HI,
+        0x00,
+        0, 0, 0, 0
+    };
+
+    if (!sdoSendRaw(initReq)) {
+        Serial.println("[Fetch] Failed to send initiate upload request");
+        return FetchResult::CAN_ERROR;
+    }
+
+    // Step 2: Wait for initiate upload response
+    twai_message_t frame;
+    if (!sdoReceiveRaw(&frame, 1000)) {
+        Serial.println("[Fetch] Timeout waiting for initiate upload response");
+        return FetchResult::TIMEOUT;
+    }
+
+    if (frame.data[0] == SDO_ABORT_BYTE) {
+        Serial.printf("[Fetch] SDO abort on init: 0x%08X\n",
+            (unsigned)(frame.data[4] | (frame.data[5]<<8) |
+                       (frame.data[6]<<16) | (frame.data[7]<<24)));
+        return FetchResult::TIMEOUT;
+    }
+
+    uint32_t totalSize = 0;
+    if (frame.data[0] & 0x01) {
+        totalSize = frame.data[4] | (frame.data[5]<<8) |
+                    (frame.data[6]<<16) | (frame.data[7]<<24);
+        Serial.printf("[Fetch] Total JSON size: %u bytes\n", (unsigned)totalSize);
+    }
+
+    String jsonBuffer;
+    if (totalSize > 0 && totalSize < 65536) {
+        jsonBuffer.reserve(totalSize + 64);
+    }
+
+    // Step 3: Download segments
+    bool toggleBit = false;
+    uint32_t segmentCount = 0;
+    uint32_t lastProgress = millis();
+
+    while (true) {
+        uint8_t segReq[8] = {
+            (uint8_t)(SDO_CMD_SEGMENT_REQ | (toggleBit ? SDO_TOGGLE_BIT_MASK : 0)),
+            0, 0, 0, 0, 0, 0, 0
+        };
+
+        if (!sdoSendRaw(segReq)) {
+            Serial.println("[Fetch] Failed to send segment request");
+            return FetchResult::CAN_ERROR;
+        }
+
+        if (!sdoReceiveRaw(&frame, 500)) {
+            Serial.printf("[Fetch] Timeout on segment %u\n", (unsigned)segmentCount);
+            return FetchResult::TIMEOUT;
+        }
+
+        if (frame.data[0] == SDO_ABORT_BYTE) {
+            Serial.println("[Fetch] SDO abort during download");
+            return FetchResult::TIMEOUT;
+        }
+
+        bool isLast = (frame.data[0] & SDO_LAST_SEGMENT) != 0;
+        int unusedBytes = (frame.data[0] >> 1) & 0x07;
+        int bytesInSegment = isLast ? (7 - unusedBytes) : 7;
+
+        for (int i = 0; i < bytesInSegment; i++) {
+            jsonBuffer += (char)frame.data[1 + i];
+        }
+
+        segmentCount++;
+        toggleBit = !toggleBit;
+
+        if (millis() - lastProgress > 2000) {
+            lastProgress = millis();
+            Serial.printf("[Fetch] %u bytes downloaded...\n", (unsigned)jsonBuffer.length());
+        }
+
+        if (isLast) break;
+    }
+
+    Serial.printf("[Fetch] Download complete: %u bytes in %u segments\n",
+        (unsigned)jsonBuffer.length(), (unsigned)segmentCount);
+
+    // Step 4: Validate JSON
+    if (jsonBuffer.length() < 10 || jsonBuffer[0] != '{') {
+        Serial.println("[Fetch] Invalid JSON received");
+        return FetchResult::PARSE_ERROR;
+    }
+
+    // Quick parse to validate
+    {
+        JsonDocument testDoc;
+        DeserializationError err = deserializeJson(testDoc, jsonBuffer.c_str(), jsonBuffer.length());
+        if (err != DeserializationError::Ok) {
+            Serial.printf("[Fetch] JSON parse error: %s\n", err.c_str());
+            return FetchResult::PARSE_ERROR;
+        }
+        Serial.printf("[Fetch] JSON valid — %u top-level keys\n", (unsigned)testDoc.size());
+    }
+
+    // Step 5: Save to SPIFFS
+    File f = SPIFFS.open("/params.json", "w");
+    if (f) {
+        f.print(jsonBuffer);
+        f.close();
+        Serial.printf("[Fetch] Saved /params.json (%u bytes)\n", (unsigned)jsonBuffer.length());
+    } else {
+        Serial.println("[Fetch] WARNING: Could not write /params.json");
+    }
+
+    // Step 6: Load into parameters[]
+    if (!loadParametersFromJSON(jsonBuffer.c_str())) {
+        Serial.println("[Fetch] Failed to load parameters");
+        return FetchResult::PARSE_ERROR;
+    }
+
+    Serial.printf("[Fetch] Loaded %u parameters from VCU\n", (unsigned)parameterCount);
+    return FetchResult::SUCCESS;
 }
 
 // ============================================================================

@@ -250,11 +250,8 @@ void setup() {
     Serial.println("CAN initialized");
     #endif
 
-    if (canManager.loadParametersFromJSON(sampleParams)) {
-        #if DEBUG_SERIAL
-        Serial.printf("Loaded %d sample parameters\n", canManager.getParameterCount());
-        #endif
-    }
+    // Load sample params as placeholder while we attempt VCU fetch
+    canManager.loadParametersFromJSON(sampleParams);
 
     if (!inputManager.init()) {
         #if DEBUG_SERIAL
@@ -277,42 +274,61 @@ void setup() {
     wifiMode = false;
     lvglSuspended = false;
 
-    if (SPIFFS.begin(true)) {
-        #if DEBUG_SERIAL
-        Serial.println("SPIFFS mounted");
-        Serial.printf("Total: %d bytes\n", SPIFFS.totalBytes());
-        Serial.printf("Used: %d bytes\n",  SPIFFS.usedBytes());
-        #endif
+    SPIFFS.begin(true);
+
+    // -----------------------------------------------------------------------
+    // Parameter loading — try in order:
+    //   1. Fetch live from VCU via SDO (always up to date)
+    //   2. Load from SPIFFS params.json (cached from previous fetch)
+    //   3. Keep sample params (basic functionality only)
+    // -----------------------------------------------------------------------
+    bool paramsLoaded = false;
+
+    Serial.println("Attempting to fetch parameters from VCU...");
+    // Show a "Fetching..." message on splash screen
+    uiManager.showFetchStatus("Fetching params\nfrom VCU...");
+    for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
+
+    FetchResult fetchResult = canManager.fetchParamsFromVCU();
+
+    if (fetchResult == FetchResult::SUCCESS) {
+        Serial.printf("Fetched %d parameters from VCU\n", canManager.getParameterCount());
+        paramsLoaded = true;
+        uiManager.showFetchStatus("VCU params loaded!");
+    } else {
+        Serial.printf("VCU fetch failed (%d), trying SPIFFS...\n", (int)fetchResult);
+        uiManager.showFetchStatus("VCU unavailable\nLoading cached...");
 
         if (SPIFFS.exists("/params.json")) {
             File paramFile = SPIFFS.open("/params.json", "r");
             if (paramFile) {
                 size_t fileSize = paramFile.size();
-                #if DEBUG_SERIAL
-                Serial.printf("Found params.json (%d bytes)\n", fileSize);
-                #endif
                 if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
                     String jsonContent = paramFile.readString();
                     paramFile.close();
                     if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
-                        #if DEBUG_SERIAL
                         Serial.printf("Loaded %d parameters from SPIFFS\n", canManager.getParameterCount());
-                        #endif
+                        paramsLoaded = true;
+                        uiManager.showFetchStatus("Cached params\nloaded OK");
                     }
                 } else {
                     paramFile.close();
-                    #if DEBUG_SERIAL
-                    Serial.println("SPIFFS parameters file invalid, keeping sample params");
-                    #endif
                     SPIFFS.remove("/params.json");
                 }
             }
-        } else {
-            #if DEBUG_SERIAL
-            Serial.println("No params.json on SPIFFS, using sample params");
-            #endif
+        }
+
+        if (!paramsLoaded) {
+            Serial.println("Using sample parameters only");
+            uiManager.showFetchStatus("Using defaults\nConnect VCU!");
         }
     }
+
+    // Start SDO manager AFTER fetch so it doesn't consume our response frames
+    canManager.initSDO();
+
+    // Brief pause so user can see the status message
+    for (int i = 0; i < 100; i++) { lv_timer_handler(); delay(10); }
 
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);

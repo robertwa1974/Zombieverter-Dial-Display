@@ -78,6 +78,19 @@ bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
     return true;
 }
 
+void UIManager::showFetchStatus(const char* msg) {
+    // Update the splash screen subtitle to show fetch progress
+    // The splash screen's subtitle label is child index 1
+    if (screens[SCREEN_SPLASH]) {
+        lv_obj_t* subtitle = lv_obj_get_child(screens[SCREEN_SPLASH], 1);
+        if (subtitle) {
+            lv_label_set_text(subtitle, msg);
+            lv_obj_set_style_text_color(subtitle, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        }
+        lv_timer_handler();
+    }
+}
+
 void UIManager::updateWifiScreen(const String& ip) {
     if (wifi_ip_label) {
         lv_label_set_text_fmt(wifi_ip_label, "IP: %s", ip.c_str());

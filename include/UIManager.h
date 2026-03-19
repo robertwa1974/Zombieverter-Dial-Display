@@ -49,6 +49,7 @@ public:
     bool isEditableScreen();  // Check if current screen supports editing
 
     void updateWifiScreen(const String& ip);
+    void showFetchStatus(const char* msg);
     void resetWifiScreen();
     void updateSettings();
     
