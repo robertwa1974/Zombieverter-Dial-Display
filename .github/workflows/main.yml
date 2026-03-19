@@ -1,0 +1,132 @@
+name: Build and Deploy Web Flasher
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Set up Python and install dependencies
+      # -----------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install esptool
+        run: pip install esptool
+
+      # -----------------------------------------------------------------------
+      # 3. Set up PlatformIO
+      # -----------------------------------------------------------------------
+      - name: Set up PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      # -----------------------------------------------------------------------
+      # 4. Build firmware
+      # -----------------------------------------------------------------------
+      - name: Build firmware
+        run: pio run -e m5stack-dial
+
+      # -----------------------------------------------------------------------
+      # 5. Build SPIFFS filesystem image
+      # -----------------------------------------------------------------------
+      - name: Build SPIFFS image
+        run: pio run -e m5stack-dial --target buildfs
+
+      # -----------------------------------------------------------------------
+      # 6. Locate build artifacts
+      # -----------------------------------------------------------------------
+      - name: Locate build artifacts
+        run: |
+          BUILD_DIR=".pio/build/m5stack-dial"
+          FRAMEWORK_DIR=$(python -c "import platformio; print(platformio.__file__)" | xargs dirname)
+
+          # Find bootloader — it lives inside the PlatformIO packages
+          BOOTLOADER=$(find ~/.platformio -name "bootloader_qio_80m.bin" 2>/dev/null | head -1)
+          if [ -z "$BOOTLOADER" ]; then
+            BOOTLOADER=$(find ~/.platformio -name "bootloader*.bin" 2>/dev/null | head -1)
+          fi
+          echo "BOOTLOADER=$BOOTLOADER" >> $GITHUB_ENV
+
+          # boot_app0 (OTA marker)
+          BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
+          echo "BOOT_APP0=$BOOT_APP0" >> $GITHUB_ENV
+
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          echo "Bootloader: $BOOTLOADER"
+          echo "boot_app0:  $BOOT_APP0"
+          ls -la $BUILD_DIR/
+
+      # -----------------------------------------------------------------------
+      # 7. Merge all binaries into factory.bin
+      #
+      # Offsets from partitions.csv:
+      #   bootloader  0x0000
+      #   partitions  0x8000
+      #   boot_app0   0xe000
+      #   firmware    0x10000
+      #   spiffs      0x3F0000
+      # -----------------------------------------------------------------------
+      - name: Merge binaries into factory.bin
+        run: |
+          esptool.py --chip esp32s3 merge_bin \
+            --output factory.bin \
+            --flash_mode dio \
+            --flash_size 8MB \
+            0x0000    ${{ env.BOOTLOADER }} \
+            0x8000    ${{ env.BUILD_DIR }}/partitions.bin \
+            0xe000    ${{ env.BOOT_APP0 }} \
+            0x10000   ${{ env.BUILD_DIR }}/firmware.bin \
+            0x3F0000  ${{ env.BUILD_DIR }}/spiffs.bin
+
+          echo "factory.bin size: $(wc -c < factory.bin) bytes"
+
+      # -----------------------------------------------------------------------
+      # 8. Prepare gh-pages deployment directory
+      # -----------------------------------------------------------------------
+      - name: Prepare deploy directory
+        run: |
+          mkdir -p deploy
+          cp factory.bin deploy/
+          cp web-flasher/index.html deploy/
+          cp web-flasher/manifest.json deploy/
+
+          # Inject version tag into manifest if this is a tagged release
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            sed -i "s/\"name\": \"ZombieVerter Dial Display\"/\"name\": \"ZombieVerter Dial Display ${VERSION}\"/" deploy/manifest.json
+          fi
+
+          echo "Deploy directory contents:"
+          ls -la deploy/
+
+      # -----------------------------------------------------------------------
+      # 9. Deploy to GitHub Pages
+      # -----------------------------------------------------------------------
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./deploy
+          publish_branch: gh-pages
+          commit_message: "Deploy web flasher ${{ github.ref_name }}"
