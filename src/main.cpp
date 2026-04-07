@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "Hardware.h"
 #include "CANData.h"
+#include "CANMonitor.h"
 #include "InputManager.h"
 #include "UIManager.h"
 #include "WiFiManager.h"
@@ -80,6 +81,12 @@ void onEncoderRotate(int32_t delta) {
             uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
             return;
         }
+        // Safety: block gear change while moving
+        CANParameter* spd = canManager.getParameterByName("speed");
+        if (spd && abs(spd->getValueAsInt()) > 50) {
+            uiManager.showWarning("Vehicle moving\nStop before\nchanging gear");
+            return;
+        }
         CANParameter* gear = canManager.getParameter(27);
         if (gear) {
             int32_t newGear = gear->getValueAsInt();
@@ -89,6 +96,12 @@ void onEncoderRotate(int32_t delta) {
     } else if (currentScreen == SCREEN_MOTOR) {
         if (!uiManager.isEditMode()) {
             uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            return;
+        }
+        // Safety: block motor mode change while moving
+        CANParameter* spd = canManager.getParameterByName("speed");
+        if (spd && abs(spd->getValueAsInt()) > 50) {
+            uiManager.showWarning("Vehicle moving\nStop before\nchanging motor");
             return;
         }
         CANParameter* motor = canManager.getParameter(129);
@@ -129,6 +142,14 @@ void onButtonClick() {
         if (uiManager.isEditMode()) {
             uiManager.toggleEditMode();  // exit edit mode
         } else {
+            // Safety: block entering edit mode on Gear/Motor while moving
+            if (currentScreen == SCREEN_GEAR || currentScreen == SCREEN_MOTOR) {
+                CANParameter* spd = canManager.getParameterByName("speed");
+                if (spd && abs(spd->getValueAsInt()) > 50) {
+                    uiManager.showWarning("Vehicle moving\nStop before\nediting");
+                    return;
+                }
+            }
             uiManager.toggleEditMode();  // enter edit mode
         }
         return;
@@ -271,6 +292,8 @@ void setup() {
     Serial.println("WiFi manager initialized");
     #endif
 
+    CANMonitor::instance().init(&canManager);
+
     wifiMode = false;
     lvglSuspended = false;
 
@@ -286,7 +309,7 @@ void setup() {
 
     Serial.println("Attempting to fetch parameters from VCU...");
     // Show a "Fetching..." message on splash screen
-    uiManager.showFetchStatus("Fetching params\nfrom VCU...");
+    uiManager.showFetchStatus("Fetching params\nfrom VCU...\n(up to 3 attempts)");
     for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
 
     FetchResult fetchResult = canManager.fetchParamsFromVCU();
@@ -370,6 +393,34 @@ void loop() {
     if (wifiMode) {
         wifiManager.update();
         canManager.update();
+
+        // Handle refetch request from web UI
+        if (wifiManager.isRefetchRequested()) {
+            wifiManager.clearRefetchRequest();
+            Serial.println("[Main] Refetch triggered from web UI");
+            // Show status on dial — briefly resume LVGL
+            lvglSuspended = false;
+            uiManager.setScreen(SCREEN_SPLASH);
+            uiManager.showFetchStatus("Refetching from\nVCU...");
+            for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
+            lvglSuspended = true;
+
+            // Stop SDO manager, run fetch, restart SDO manager
+            FetchResult result = canManager.fetchParamsFromVCU();
+
+            lvglSuspended = false;
+            if (result == FetchResult::SUCCESS) {
+                uiManager.showFetchStatus("VCU params\nreloaded!");
+                Serial.printf("[Main] Refetch success — %d params\n",
+                    canManager.getParameterCount());
+            } else {
+                uiManager.showFetchStatus("Refetch failed\nUsing cached");
+                Serial.println("[Main] Refetch failed");
+            }
+            for (int i = 0; i < 200; i++) { lv_timer_handler(); delay(10); }
+            lvglSuspended = true;
+            uiManager.setScreen(SCREEN_WIFI);
+        }
 
         // Keep SDO polling running in WiFi mode so spot values stay live
         if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {

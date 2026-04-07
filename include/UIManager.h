@@ -50,6 +50,7 @@ public:
 
     void updateWifiScreen(const String& ip);
     void showFetchStatus(const char* msg);
+    void showWarning(const char* msg);
     void resetWifiScreen();
     void updateSettings();
     
@@ -170,6 +171,8 @@ private:
     lv_obj_t* wifi_ssid_label;
     lv_obj_t* wifi_password_label;
     lv_obj_t* wifi_ip_label;
+    lv_obj_t* warningLabel = nullptr;
+    uint32_t  warningExpiry = 0;
     lv_obj_t* wifi_status_label;
     
     // Settings screen widgets

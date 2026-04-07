@@ -122,7 +122,7 @@
 				<a class="tablink" onclick="ui.openPage('dashboard', this, 'white')" style="background-color:white">
 					<!-- /icon-grid.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAFpJREFUSIljYBhO4DADA8N/PPgwOWoZkTT9J8IRMPVEq2XBYwgywGUgQbVMRLiEIjBqAUGALZKJSSFEq0X2wRECao/gYBNSO4zAaFGBVe3Qz2hD34LRomLgAQDIVzQ/KtRExgAAAABJRU5ErkJggg=="><p class="navbar-text">DASHBOARD</p></a>
-				<a class="tablink" onclick="ui.openPage('update', this, 'white')">
+				<a class="tablink" href="/ota.html" target="_blank">
 					<!-- /icon-cpu.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAALlJREFUSInVVe0ORTAMPRG53gnvd/FavMrmMfihZGa6dhdxT9JI+nW6VVcgjp5EqldjIpHqd8iuqEBDUADoAFgcK5w88fUWQAvgwxF2gURaaTiCtfKSczpBRbGGcxI1ThP/SJP7ELMD1+7L2RxsdskJ6kQbyxzTiX0fH7RbCGJNTsHW5FwZdBmzC81vGr2J/5xkFyN9q4Rc69BZzqnF78/1lyMoiMQkJDZYdgG7cEJ4906WDNqg1O8wA3zYflZwNkaoAAAAAElFTkSuQmCC"><p class="navbar-text">UPDATE</p></a>
 				<a class="tablink" onclick="ui.openPage('parameters', this, 'white')">
@@ -149,6 +149,10 @@
 				<a class="tablink" onclick="ui.openPage('support', this, 'white')">
 					<!-- /icon-help-circle.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAdRJREFUSInF1T1rlEEUBeBHYpHFJZDFQkhqsxELwdrPwlLtLP0g+heU+Ee0sLIViRYWJgGjEFBT6ppEsDGFNsYQLSUWc4d9s072fSOIB6Y598y5l7kzd/jHOFAT7+AyLqKLyeA3sIqnmMO3/SZuYRZb2KlZ30Pbamo+iZWKwXPMYAqHYnVxE/MV3QommphvxIY1nG5Q0Bmsx56NYUlalcpfYLyBecY4lmLvG4yWRLP6lQ+an8Az/MBXPCxU2sHH8LgzaN7Rb+jgsZzET3829wuODGjP6jd+V5E39Bs6iNzIBxiT+rQQ3L2CPseuVcm5IGcKGx6hJ92ejOOhf1fQ34rY4yq5FuRUYUMJF4Yk6EZstUpuB9muMR6RjjPr7xY07Yht7zfBSFScm3w/uEGMRXyrSjY5opyghyv2nmO7juhgkD0cxalIVsIvqbl1yNf8fZW8HlnnGxjUYTG8rlbJjvQ4dqTZshdeYXlI/Hx4bCqMmjwqPuHwXySojorbJcEo3oZgqVTBEHTwUs2wIw2wPK7XpdlSh3P6lX/W4E+YiCryfV+Qnv+09E7aOBbcYkX3uol5xqg0cnPjh61N6cyLx1L36Y/jkvTpT9v96X+QPv0nkeT/4DdxyppwcyvRBAAAAABJRU5ErkJggg=="><p class="navbar-text">SUPPORT</p></a>
+				<a class="tablink" href="/can.html" target="_blank">
+					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAANdJREFUSIntlbEKwjAQhr+oeaAOPoKLOGmHUnTqQ/Qubl30CfQRfAFfwME3cBRBKC4KgmKhkEM6lNA0NrG5wV2W/8Llu0sChPTWBQqggFO4KzfRK/AGNEBFJqsJuAMX4CobRJ+BHqiABbDOFWwB1NImQCW1y2wBrIGrWzk3oDcDrNPMoiWAFXACVqzSbZR0TGHqLVMHLCDthVgLbQpPQA+ewN7pAFwt0vAFPAFQIwVqxPqU/L7YAAAAABJRU5ErkJggg==">
+					<p class="navbar-text">CAN MONITOR</p>
+				</a>
 			</div>
 
 			<!-- spinner div -->
@@ -417,7 +421,7 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 						<h2 id="plot">Plot</h2>
 						<canvas id="canvas" width="100%" height=40></canvas>
 						<p>
-						<p>Copyright 2018 Johannes Huebner dev@johanneshuebner.com</p>
+						<p>Copyright 2018 Johannes Huebner <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="3d59584b7d5752555c5353584e5548585f53584f135e5250">[email&#160;protected]</a></p>
 						<p>Charting by <a href="http://chartjs.org/" target="_blank">chart.js</a></p>
 						<p>Gauges by <a href="https://github.com/Mikhus/canvas-gauges" target="_blank">Mykhailo Stadnyk</a></p>
 					</div>
@@ -545,13 +549,4 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 						<p>Paid support is also available. See details <a href="https://openinverter.org/docs/index.html%3Fen_consulting,35.html">here</a>.
 					</div>
 				</div>
-				<!-- END SUPPORT -->
-
-			</div> <!-- end content-wrapper -->
-		</div> <!-- end content-wrapper-inner -->
-
-	</div>
-
-</body>
-</html>
-
+				<!-- END SUPPORT

@@ -130,7 +130,13 @@ void UIManager::lvgl_encoder_read_cb(lv_indev_drv_t* indev_drv, lv_indev_data_t*
 
 void UIManager::update() {
     lv_timer_handler();
-    
+
+    // Auto-hide warning overlay when it expires
+    if (warningLabel && millis() > warningExpiry) {
+        lv_obj_del(warningLabel);
+        warningLabel = nullptr;
+    }
+
     if (currentScreen == SCREEN_LOCK && immobilizer) {
         updateLockScreen();
     }
@@ -267,8 +273,8 @@ void UIManager::createDashboardScreen() {
     lv_arc_set_rotation(dash_soc_arc, 135);
     lv_arc_set_bg_angles(dash_soc_arc, 0, 270);
     lv_arc_set_value(dash_soc_arc, 0);
-    lv_obj_set_style_arc_width(dash_soc_arc, 6, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(dash_soc_arc, 6, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(dash_soc_arc, 10, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(dash_soc_arc, 10, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
     lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
     lv_obj_remove_style(dash_soc_arc, NULL, LV_PART_KNOB);
@@ -299,7 +305,7 @@ void UIManager::createPowerScreen() {
     
     lv_meter_scale_t* scale = lv_meter_add_scale(power_meter);
     lv_meter_set_scale_ticks(power_meter, scale, 41, 2, 10, lv_palette_darken(LV_PALETTE_GREY, 2));
-    lv_meter_set_scale_major_ticks(power_meter, scale, 8, 3, 15, lv_color_white(), 10);
+    lv_meter_set_scale_major_ticks(power_meter, scale, 40, 3, 15, lv_color_white(), 10);  // only 3 labels: -50, 0~ish, 150
     lv_meter_set_scale_range(power_meter, scale, -50, 150, 270, 135);
     
     lv_meter_indicator_t* arc_regen = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_GREEN), 0);
@@ -365,7 +371,7 @@ void UIManager::createTemperatureScreen() {
     lv_arc_set_rotation(temp_motor_arc, 135);
     lv_arc_set_bg_angles(temp_motor_arc, 0, 270);
     lv_arc_set_value(temp_motor_arc, 0);
-    lv_arc_set_range(temp_motor_arc, 0, 120);
+    lv_arc_set_range(temp_motor_arc, 0, 80);
     lv_obj_set_style_arc_width(temp_motor_arc, 8, LV_PART_MAIN);
     lv_obj_set_style_arc_width(temp_motor_arc, 8, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(temp_motor_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
@@ -385,7 +391,7 @@ void UIManager::createTemperatureScreen() {
     lv_arc_set_rotation(temp_inverter_arc, 135);
     lv_arc_set_bg_angles(temp_inverter_arc, 0, 270);
     lv_arc_set_value(temp_inverter_arc, 0);
-    lv_arc_set_range(temp_inverter_arc, 0, 100);
+    lv_arc_set_range(temp_inverter_arc, 0, 80);
     lv_obj_set_style_arc_width(temp_inverter_arc, 8, LV_PART_MAIN);
     lv_obj_set_style_arc_width(temp_inverter_arc, 8, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(temp_inverter_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
@@ -478,19 +484,19 @@ void UIManager::createBMSScreen() {
     lv_label_set_text(bms_cell_max_label, "Max Cell: -.--V");
     lv_obj_set_style_text_font(bms_cell_max_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(bms_cell_max_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_align(bms_cell_max_label, LV_ALIGN_TOP_MID, 0, 60);
+    lv_obj_align(bms_cell_max_label, LV_ALIGN_TOP_MID, 0, 50);
     
     bms_cell_min_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_cell_min_label, "Min Cell: -.--V");
     lv_obj_set_style_text_font(bms_cell_min_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(bms_cell_min_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
-    lv_obj_align(bms_cell_min_label, LV_ALIGN_TOP_MID, 0, 95);
+    lv_obj_align(bms_cell_min_label, LV_ALIGN_TOP_MID, 0, 88);
     
     bms_cell_delta_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_cell_delta_label, "Delta: ---mV");
     lv_obj_set_style_text_font(bms_cell_delta_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(bms_cell_delta_label, lv_color_white(), 0);
-    lv_obj_align(bms_cell_delta_label, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(bms_cell_delta_label, LV_ALIGN_TOP_MID, 0, 126);
     
     bms_soc_bar = lv_bar_create(screens[SCREEN_BMS]);
     lv_obj_add_flag(bms_soc_bar, LV_OBJ_FLAG_HIDDEN);
@@ -499,7 +505,7 @@ void UIManager::createBMSScreen() {
     lv_label_set_text(bms_temp_max_label, "Max Temp: --\xC2\xB0""C");
     lv_obj_set_style_text_font(bms_temp_max_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(bms_temp_max_label, lv_color_white(), 0);
-    lv_obj_align(bms_temp_max_label, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_align(bms_temp_max_label, LV_ALIGN_TOP_MID, 0, 162);
 }
 
 void UIManager::createGearScreen() {
@@ -617,7 +623,7 @@ void UIManager::createRegenScreen() {
     lv_obj_t* inst = lv_label_create(screens[SCREEN_REGEN]);
     lv_label_set_text(inst, "Click to edit");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_color(inst, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
 }
@@ -851,6 +857,27 @@ void UIManager::updateBattery() {
 void UIManager::updateBMS() {
     if (!canManager) return;
 
+    CANParameter* vmax = canManager->getParameterByName("BMS_Vmax");
+    CANParameter* vmin = canManager->getParameterByName("BMS_Vmin");
+
+    if (vmax && bms_cell_max_label) {
+        lv_label_set_text_fmt(bms_cell_max_label, "Max Cell: %.3fV",
+            vmax->getValueAsInt() / 1000.0f);
+    }
+
+    if (vmin && bms_cell_min_label) {
+        lv_label_set_text_fmt(bms_cell_min_label, "Min Cell: %.3fV",
+            vmin->getValueAsInt() / 1000.0f);
+    }
+
+    if (vmax && vmin && bms_cell_delta_label) {
+        int32_t delta = vmax->getValueAsInt() - vmin->getValueAsInt();
+        lv_label_set_text_fmt(bms_cell_delta_label, "Delta: %dmV", delta);
+        // Warn if delta > 100mV
+        lv_obj_set_style_text_color(bms_cell_delta_label,
+            delta > 100 ? lv_palette_main(LV_PALETTE_RED) : lv_color_white(), 0);
+    }
+
     CANParameter* soc = canManager->getParameterByName("SOC");
     if (soc) {
         lv_bar_set_value(bms_soc_bar, soc->getValueAsInt(), LV_ANIM_ON);
@@ -1003,6 +1030,42 @@ bool UIManager::isEditableScreen() {
             currentScreen == SCREEN_REGEN);
 }
 
+void UIManager::showWarning(const char* msg) {
+    // Get the currently active screen
+    lv_obj_t* activeScreen = screens[currentScreen];
+    if (!activeScreen) return;
+
+    // Remove any existing warning overlay
+    if (warningLabel) {
+        lv_obj_del(warningLabel);
+        warningLabel = nullptr;
+    }
+
+    // Create a container with semi-transparent red background
+    warningLabel = lv_obj_create(activeScreen);
+    lv_obj_set_size(warningLabel, 200, 80);
+    lv_obj_center(warningLabel);
+    lv_obj_set_style_bg_color(warningLabel, lv_color_make(180, 0, 0), 0);
+    lv_obj_set_style_bg_opa(warningLabel, LV_OPA_90, 0);
+    lv_obj_set_style_border_color(warningLabel, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(warningLabel, 2, 0);
+    lv_obj_set_style_radius(warningLabel, 10, 0);
+
+    // Warning icon + text
+    lv_obj_t* text = lv_label_create(warningLabel);
+    lv_label_set_text_fmt(text, "⚠ %s", msg);
+    lv_obj_set_style_text_font(text, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(text, lv_color_white(), 0);
+    lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(text, 180);
+    lv_obj_center(text);
+
+    warningExpiry = millis() + 2000;  // auto-hide after 2 seconds
+
+    Serial.printf("[UI] Warning: %s\n", msg);
+}
+
 // ============================================================================
 // LOCK SCREEN
 // ============================================================================
@@ -1011,11 +1074,29 @@ void UIManager::createLockScreen() {
     screens[SCREEN_LOCK] = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screens[SCREEN_LOCK], lv_color_black(), 0);
     
-    lock_icon = lv_label_create(screens[SCREEN_LOCK]);
-    lv_label_set_text(lock_icon, "\xEF\x80\xA3");
-    lv_obj_set_style_text_font(lock_icon, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_obj_align(lock_icon, LV_ALIGN_CENTER, 0, -60);
+    // Lock icon — draw as a simple padlock shape using LVGL primitives
+    // Body (rectangle)
+    lock_icon = lv_obj_create(screens[SCREEN_LOCK]);
+    lv_obj_set_size(lock_icon, 36, 28);
+    lv_obj_set_style_bg_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(lock_icon, 0, 0);
+    lv_obj_set_style_radius(lock_icon, 4, 0);
+    lv_obj_align(lock_icon, LV_ALIGN_CENTER, 0, -55);
+
+    // Shackle (arc on top of body)
+    lv_obj_t* shackle = lv_arc_create(screens[SCREEN_LOCK]);
+    lv_obj_set_size(shackle, 30, 30);
+    lv_arc_set_rotation(shackle, 0);
+    lv_arc_set_bg_angles(shackle, 0, 360);
+    lv_arc_set_angles(shackle, 180, 360);
+    lv_obj_set_style_arc_color(shackle, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(shackle, lv_color_black(), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(shackle, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(shackle, 0, LV_PART_MAIN);
+    lv_obj_remove_style(shackle, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(shackle, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(shackle, LV_ALIGN_CENTER, 0, -72);
     
     lock_title_label = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_title_label, "VEHICLE LOCKED");
@@ -1057,11 +1138,11 @@ void UIManager::updateLockScreen() {
     lv_label_set_text_fmt(lock_digit_label, "%d", immobilizer->getCurrentDigit());
     
     if (immobilizer->isUnlocked()) {
-        lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
+        lv_obj_set_style_bg_color(lock_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
         lv_label_set_text(lock_title_label, "UNLOCKED");
         lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     } else {
-        lv_obj_set_style_text_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_obj_set_style_bg_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
         lv_label_set_text(lock_title_label, "VEHICLE LOCKED");
         lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_RED), 0);
     }

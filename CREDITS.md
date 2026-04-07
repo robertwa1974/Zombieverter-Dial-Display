@@ -1,84 +1,48 @@
-# Credits and Acknowledgments
+# Credits
 
-## Original Author
+## Original Project
 
-**Jamie Jones (jamiejones85)** - Creator of the original LilyGO T-Display CAN bus interface for ZombieVerter
+**Jamie Jones (jamiejones85)**
+[ZombieVerterDisplay](https://github.com/jamiejones85/ZombieVerterDisplay)
 
-Repository: https://github.com/jamiejones85/ZombieVerterDisplay
-
-Jamie Jones developed the initial implementation of a CAN bus display for the ZombieVerter motor controller using the LilyGO T-Display ESP32 board. Their work provided the foundation for this project, including:
-
-- CAN message parsing and parameter management system
-- ZombieVerter CAN protocol implementation
-- Display rendering concepts and UI design
-- Parameter configuration via JSON
-- Real-time telemetry processing
-- SDO (Service Data Object) communication handling
-
-Without Jamie Jones' excellent groundwork, this M5Stack Dial adaptation would not have been possible. The original project can be found at:
-https://github.com/jamiejones85/ZombieVerterDisplay
+Jamie created the original CAN bus display for the ZombieVerter using the LilyGO T-Display ESP32. His work established the CAN/SDO protocol implementation, parameter management system, and the OpenInverter web interface integration that this project builds on.
 
 ## M5Stack Dial Adaptation
 
-**Robert Wahler (robertwa1974)** - Adaptation for M5Stack Dial hardware
+**robertwa1974**
+[Zombieverter-Dial-Display](https://github.com/robertwa1974/Zombieverter-Dial-Display)
 
-This project ports Jamiejones' code to the M5Stack Dial platform and adds:
+Ported to M5Stack Dial and extended:
 
-- M5Stack Dial hardware support (ESP32-S3, round display)
-- Rotary encoder input handling for parameter control
-- Direct CAN control for Gear/Motor/Regen parameters
-- Optimistic UI updates for instant feedback
-- Encoder sensitivity tuning (4x quadrature handling)
-- WiFi configuration interface
-- Additional screens and UI improvements
+- Full LVGL UI with 10 screens optimised for the 240×240 round display
+- Rotary encoder navigation with edit mode for Gear, Motor, Regen
+- Live values on both dial and web UI via CAN broadcast + SDO polling
+- Automatic parameter fetch from VCU at boot via SDO segmented transfer
+- `/spot` endpoint serving live values to the web interface
+- All parameter writes via SDO — no VCU CAN map required
+- GitHub Actions CI/CD with automated factory binary build and web flasher deployment
 
-## Hardware Platforms
+## Libraries
 
-### Original Platform
-- **LilyGO T-Display** - ESP32-based development board with built-in TFT display
-- Designed by LilyGO Technology
+| Library | Purpose |
+|---------|---------|
+| LVGL 8.4 | UI framework |
+| M5Unified | M5Stack hardware abstraction |
+| M5GFX | Display driver |
+| ESP32-TWAI | CAN bus driver (built into ESP-IDF) |
+| ArduinoJson | JSON parsing |
+| ESPAsyncWebServer | Async web server |
+| AsyncTCP | Async TCP layer |
 
-### Current Platform  
-- **M5Stack Dial** - ESP32-S3 smart rotary knob with 1.28" round touch screen
-- Designed by M5Stack Technology Co., Ltd.
+## Community
 
-## Software Components
-
-### Core Libraries
-- **ESP32-TWAI-CAN** / **ESP32CAN** - CAN bus communication
-- **M5Dial** - M5Stack hardware abstraction layer
-- **ESP32Encoder** - Rotary encoder handling
-- **OneButton** - Button debouncing and event detection
-- **ArduinoJson** - JSON parameter parsing
-
-### Motor Controller
-- **ZombieVerter** - Open-source AC induction motor controller
-- Developed by the OpenInverter community
-- Based on Johannes Huebner's original inverter design
-
-### OpenInverter Project
-- **OpenInverter Community** - Open-source EV motor controller development
-- Forum, documentation, and support at [openinverter.org](https://openinverter.org)
-- Community members who developed and documented the CAN protocol
-
-## Special Thanks
-
-- **OpenInverter Forum Members** - For CAN protocol documentation and support
-- **M5Stack Community** - For hardware support and examples
-- **ESP32 Arduino Core Team** - For the excellent ESP32 Arduino framework
-- **PlatformIO Team** - For the development platform
-
-## Contributing
-
-This project welcomes contributions from the community. If you improve the code, add features, or fix bugs, please consider submitting a pull request.
-
-## Open Source
-
-Both Jamie Jones' original LilyGO implementation and this M5Stack Dial adaptation are open source projects, freely available for the electric vehicle community to use, modify, and improve.
+- **OpenInverter community** — CAN protocol documentation and forum support
+- **Nishanth Samala (outlandnish)** — SDO protocol reference implementation
+- **M5Stack community** — Hardware support and examples
 
 ## Links
 
-- **Original Project:** https://github.com/jamiejones85/ZombieVerterDisplay
-- **This Adaptation:** https://github.com/robertwa1974/Zombieverter-Dial-Display
-- **ZombieVerter:** https://openinverter.org/wiki/Zombieverter
-- **OpenInverter Forum:** https://openinverter.org/forum/
+- Original project: https://github.com/jamiejones85/ZombieVerterDisplay
+- This project: https://github.com/robertwa1974/Zombieverter-Dial-Display
+- ZombieVerter VCU: https://openinverter.org/wiki/Zombieverter
+- OpenInverter forum: https://openinverter.org/forum/

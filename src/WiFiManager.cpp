@@ -11,6 +11,7 @@
 
 #include "WiFiManager.h"
 #include "CANData.h"
+#include "CANMonitor.h"
 #include "Config.h"
 
 #include <WiFi.h>
@@ -272,6 +273,21 @@ void WiFiManager::startServer() {
         }
     });
 
+    // -----------------------------------------------------------------------
+    // /refetch — trigger fresh VCU parameter download via SDO
+    // -----------------------------------------------------------------------
+    server->on("/refetch", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            if (!instance) { request->send(500); return; }
+            instance->handleRefetch(request);
+        }
+    );
+
+    // -----------------------------------------------------------------------
+    // CAN Monitor — WebSocket + REST endpoints
+    // -----------------------------------------------------------------------
+    CANMonitor::instance().registerEndpoints(server);
+
     server->begin();
     serverStarted = true;
     Serial.println("[WiFi] Async web server started on port 80");
@@ -517,6 +533,18 @@ void WiFiManager::handleFileDelete(AsyncWebServerRequest* request) {
     SPIFFS.remove(path);
     Serial.printf("[WiFi] Deleted: %s\n", path.c_str());
     request->send(200, "text/plain", "");
+}
+
+// ---------------------------------------------------------------------------
+// /refetch — trigger VCU parameter re-download
+// Sets a flag; main loop picks it up and calls fetchParamsFromVCU()
+// so we don't block the async TCP task.
+// ---------------------------------------------------------------------------
+void WiFiManager::handleRefetch(AsyncWebServerRequest* request) {
+    refetchRequested = true;
+    Serial.println("[WiFi] Refetch from VCU requested via web UI");
+    request->send(200, "application/json",
+        "{\"ok\":true,\"message\":\"Refetch started\"}");
 }
 
 // ---------------------------------------------------------------------------

@@ -105,6 +105,7 @@ private:
     // Low-level SDO helpers for segmented download (bypass SDOManager)
     bool sdoSendRaw(uint8_t* data8);
     bool sdoReceiveRaw(twai_message_t* frame, uint32_t timeoutMs = 500);
+    FetchResult fetchParamsAttempt();  // single attempt, called by fetchParamsFromVCU
 
     void processReceivedMessage(CANMessage& msg);
     void handleSDOResponse(CANMessage& msg);

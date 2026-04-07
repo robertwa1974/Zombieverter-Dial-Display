@@ -1,4 +1,5 @@
 #include "CANData.h"
+#include "CANMonitor.h"
 #include "Config.h"
 #include "driver/twai.h"
 #include <SPIFFS.h>
@@ -60,7 +61,7 @@ bool CANDataManager::init() {
         (gpio_num_t)CAN_RX_PIN,
         TWAI_MODE_NORMAL
     );
-    g_config.rx_queue_len = 10;
+    g_config.rx_queue_len = 32;  // deeper queue prevents broadcast frames evicting SDO responses
     g_config.tx_queue_len = 10;
 
     if (twai_driver_install(&g_config, &t_config, &f_config) != ESP_OK) {
@@ -136,6 +137,46 @@ bool CANDataManager::sdoReceiveRaw(twai_message_t* frame, uint32_t timeoutMs) {
 #define SDO_ABORT_BYTE      0x80
 
 FetchResult CANDataManager::fetchParamsFromVCU() {
+    // Give VCU time to initialise its SDO stack after power-on.
+    // Without this, the Dial may send the initiate upload request before
+    // the VCU is ready and get no response.
+    Serial.println("[Fetch] Waiting 2s for VCU SDO stack to initialise...");
+    delay(2000);
+
+    // Drain any broadcast frames that accumulated during the delay
+    // so the TWAI queue is empty before we start the SDO transfer.
+    {
+        twai_message_t discard;
+        uint32_t drained = 0;
+        while (twai_receive(&discard, 0) == ESP_OK) drained++;
+        if (drained > 0)
+            Serial.printf("[Fetch] Drained %u stale frames from TWAI queue\n", drained);
+    }
+
+    const int MAX_ATTEMPTS = 3;
+    FetchResult lastResult = FetchResult::TIMEOUT;
+
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (attempt > 1) {
+            Serial.printf("[Fetch] Retrying... attempt %d/%d\n", attempt, MAX_ATTEMPTS);
+            delay(1000);
+            // Drain again between retries
+            twai_message_t discard;
+            while (twai_receive(&discard, 0) == ESP_OK) {}
+        }
+
+        lastResult = fetchParamsAttempt();
+        if (lastResult == FetchResult::SUCCESS) return FetchResult::SUCCESS;
+
+        Serial.printf("[Fetch] Attempt %d failed: %d\n", attempt, (int)lastResult);
+    }
+
+    Serial.println("[Fetch] All attempts failed");
+    return lastResult;
+}
+
+// Internal single attempt — called by fetchParamsFromVCU with retry wrapper
+FetchResult CANDataManager::fetchParamsAttempt() {
     Serial.println("[Fetch] Starting VCU parameter download via SDO...");
 
     // Step 1: Send initiate upload request for index 0x5001 subindex 0
@@ -154,7 +195,7 @@ FetchResult CANDataManager::fetchParamsFromVCU() {
 
     // Step 2: Wait for initiate upload response
     twai_message_t frame;
-    if (!sdoReceiveRaw(&frame, 1000)) {
+    if (!sdoReceiveRaw(&frame, 1500)) {
         Serial.println("[Fetch] Timeout waiting for initiate upload response");
         return FetchResult::TIMEOUT;
     }
@@ -283,8 +324,15 @@ void CANDataManager::update() {
             sdoManager.processIncomingFrame(rx_message);
             lastMessageTime = millis();
             connected = true;
+            // Forward to monitor even for SDO frames
+            if (CANMonitor::instance().isActive())
+                CANMonitor::instance().pushFrame(rx_message);
             continue;
         }
+
+        // Forward all non-SDO frames to monitor
+        if (CANMonitor::instance().isActive())
+            CANMonitor::instance().pushFrame(rx_message);
 
         CANMessage msg;
         msg.id        = rx_message.identifier;
@@ -352,43 +400,13 @@ void CANDataManager::requestParameter(uint16_t paramId) {
 // ============================================================================
 
 void CANDataManager::setParameter(uint16_t paramId, int32_t value) {
-    CANMessage msg;
-    msg.timestamp = millis();
+    // All parameters written via SDO — no CAN map required on VCU.
+    // Update local cache immediately so dial display reflects change without
+    // waiting for the next SDO poll cycle.
+    updateParameterBySDOId(paramId, value);
 
-    // Map VCU param IDs to CAN frames for real-time control params
-    // Gear: VCU id=27
-    if (paramId == 27) {
-        msg.id = 0x300; msg.length = 8;
-        msg.data[0] = (uint8_t)value;
-        memset(msg.data + 1, 0, 7);
-        updateParameterBySDOId(27, value);
-        enqueueTx(msg);
-        return;
-    }
-    // MotActive: VCU id=129
-    if (paramId == 129) {
-        msg.id = 0x301; msg.length = 8;
-        msg.data[0] = (uint8_t)value;
-        memset(msg.data + 1, 0, 7);
-        updateParameterBySDOId(129, value);
-        enqueueTx(msg);
-        return;
-    }
-    // regenmax: VCU id=61
-    if (paramId == 61) {
-        msg.id = 0x302; msg.length = 8;
-        msg.data[0] =  value       & 0xFF;
-        msg.data[1] = (value >> 8) & 0xFF;
-        memset(msg.data + 2, 0, 6);
-        updateParameterBySDOId(61, value);
-        enqueueTx(msg);
-        return;
-    }
-
-    // All other params: SDO write with ×32 fixed-point scaling
-    if (paramId < 1000) {
-        sdoManager.requestWrite((uint8_t)paramId, value * 32, true);
-    }
+    // SDO write with ×32 fixed-point scaling (all VCU params use this encoding)
+    sdoManager.requestWrite(paramId, value * 32, true);
 }
 
 // ============================================================================
