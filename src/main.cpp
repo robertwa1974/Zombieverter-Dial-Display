@@ -7,6 +7,8 @@
 #include "InputManager.h"
 #include "UIManager.h"
 #include "WiFiManager.h"
+#include "TripLogger.h"
+#include "GVRETServer.h"
 
 // Global objects
 CANDataManager canManager;
@@ -350,6 +352,15 @@ void setup() {
     // Start SDO manager AFTER fetch so it doesn't consume our response frames
     canManager.initSDO();
 
+    // Initialize trip logger (reads existing NVS ring buffer state)
+    TripLogger::getInstance().begin();
+
+    // Register GVRET bridge as CAN frame observer — pushes every frame to
+    // connected SavvyCAN clients in real time when WiFi AP is active
+    canManager.setFrameObserver([](uint32_t id, bool extd, const uint8_t* data, uint8_t dlc) {
+        GVRETServer::getInstance().pushFrame(id, extd, data, dlc);
+    });
+
     // Brief pause so user can see the status message
     for (int i = 0; i < 100; i++) { lv_timer_handler(); delay(10); }
 
@@ -441,6 +452,29 @@ void loop() {
 
     // Normal mode: full CAN + LVGL update
     canManager.update();
+
+    // Trip logger — records one entry every 5s while speed > 10 RPM
+    {
+        CANParameter* spd  = canManager.getParameterByName("speed");
+        CANParameter* udc  = canManager.getParameterByName("udc");
+        CANParameter* idc  = canManager.getParameterByName("idc");
+        CANParameter* soc  = canManager.getParameterByName("SOC");
+        CANParameter* ths  = canManager.getParameterByName("tmphs");
+        CANParameter* tm   = canManager.getParameterByName("tmpm");
+        CANParameter* pwr  = canManager.getParameterByName("pwr");
+        CANParameter* pot  = canManager.getParameterByName("potnorm");
+
+        TripLogger::getInstance().update(
+            spd  ? spd->getValueAsInt()              : 0,   // speed_rpm
+            udc  ? (int)(udc->getValueAsInt() * 10)  : 0,   // udc_dv  (V × 10)
+            idc  ? (int)(idc->getValueAsInt() * 10)  : 0,   // idc_da  (A × 10)
+            pwr  ? (int)(pwr->getValueAsInt() * 100) : 0,   // pwr_dkw (kW × 100)
+            soc  ? soc->getValueAsInt()              : 0,   // soc_pct
+            ths  ? ths->getValueAsInt()              : 0,   // tmphs_c
+            tm   ? tm->getValueAsInt()               : 0,   // tmpm_c
+            pot  ? pot->getValueAsInt()              : 0    // potnorm (0-1000)
+        );
+    }
 
     // Round-robin SDO parameter polling
     if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {

@@ -859,28 +859,38 @@ void UIManager::updateBMS() {
 
     CANParameter* vmax = canManager->getParameterByName("BMS_Vmax");
     CANParameter* vmin = canManager->getParameterByName("BMS_Vmin");
+    CANParameter* tmax = canManager->getParameterByName("BMS_Tmax");
 
+    // Use snprintf for voltage formatting — LVGL's lv_label_set_text_fmt
+    // does not support %f (float printf disabled to save flash space).
     if (vmax && bms_cell_max_label) {
-        lv_label_set_text_fmt(bms_cell_max_label, "Max Cell: %.3fV",
-            vmax->getValueAsInt() / 1000.0f);
+        int32_t mv = vmax->getValueAsInt();
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%d.%03dV", mv / 1000, mv % 1000);
+        lv_label_set_text_fmt(bms_cell_max_label, "Max: %s", buf);
     }
 
     if (vmin && bms_cell_min_label) {
-        lv_label_set_text_fmt(bms_cell_min_label, "Min Cell: %.3fV",
-            vmin->getValueAsInt() / 1000.0f);
+        int32_t mv = vmin->getValueAsInt();
+        char buf[12];
+        snprintf(buf, sizeof(buf), "%d.%03dV", mv / 1000, mv % 1000);
+        lv_label_set_text_fmt(bms_cell_min_label, "Min: %s", buf);
     }
 
     if (vmax && vmin && bms_cell_delta_label) {
         int32_t delta = vmax->getValueAsInt() - vmin->getValueAsInt();
         lv_label_set_text_fmt(bms_cell_delta_label, "Delta: %dmV", delta);
-        // Warn if delta > 100mV
         lv_obj_set_style_text_color(bms_cell_delta_label,
             delta > 100 ? lv_palette_main(LV_PALETTE_RED) : lv_color_white(), 0);
     }
 
-    CANParameter* soc = canManager->getParameterByName("SOC");
-    if (soc) {
-        lv_bar_set_value(bms_soc_bar, soc->getValueAsInt(), LV_ANIM_ON);
+    if (tmax && bms_temp_max_label) {
+        int32_t tempC = tmax->getValueAsInt();
+        lv_label_set_text_fmt(bms_temp_max_label, "Temp: %d\xC2\xB0""C", tempC);
+        lv_obj_set_style_text_color(bms_temp_max_label,
+            tempC > 45 ? lv_palette_main(LV_PALETTE_RED) :
+            tempC > 35 ? lv_palette_main(LV_PALETTE_YELLOW) :
+                         lv_color_white(), 0);
     }
 }
 

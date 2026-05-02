@@ -22,8 +22,14 @@ void CANDataManager::onSDOResult(const SDOResult& result) {
         return;
     }
 
-    // ZombieVerter SDO values are always fixed-point ×32 regardless of param type
-    instance->updateParameterBySDOId(result.paramId, result.value / 32);
+    // ZombieVerter SDO values are always fixed-point ×32 regardless of param type.
+    // BMS cell voltages (2084=BMS_Vmin, 2085=BMS_Vmax) are stored in mV (×1000/32)
+    // to preserve decimal precision for display as e.g. 3.780V.
+    if (result.paramId == 2084 || result.paramId == 2085) {
+        instance->updateParameterBySDOId(result.paramId, result.value * 1000 / 32);
+    } else {
+        instance->updateParameterBySDOId(result.paramId, result.value / 32);
+    }
     #if DEBUG_CAN
     Serial.printf("[SDO CB] Read param %d raw=%d scaled=%d\n",
                   result.paramId, result.value, result.value / 32);
@@ -40,7 +46,7 @@ void CANDataManager::onSDOResult(const SDOResult& result) {
 
 CANDataManager::CANDataManager()
     : parameterCount(0), txHead(0), txTail(0), rxHead(0), rxTail(0),
-      connected(false), lastMessageTime(0), bmsCellCount(0)
+      connected(false), lastMessageTime(0), bmsCellCount(0), _frameObserver(nullptr)
 {
     instance = this;
     for (uint8_t i = 0; i < MAX_BMS_CELLS; i++) {
@@ -327,12 +333,22 @@ void CANDataManager::update() {
             // Forward to monitor even for SDO frames
             if (CANMonitor::instance().isActive())
                 CANMonitor::instance().pushFrame(rx_message);
+            if (_frameObserver)
+                _frameObserver(rx_message.identifier,
+                               rx_message.extd != 0,
+                               rx_message.data,
+                               rx_message.data_length_code);
             continue;
         }
 
         // Forward all non-SDO frames to monitor
         if (CANMonitor::instance().isActive())
             CANMonitor::instance().pushFrame(rx_message);
+        if (_frameObserver)
+            _frameObserver(rx_message.identifier,
+                           rx_message.extd != 0,
+                           rx_message.data,
+                           rx_message.data_length_code);
 
         CANMessage msg;
         msg.id        = rx_message.identifier;
@@ -384,8 +400,8 @@ void CANDataManager::requestParameter(uint16_t paramId) {
         2016,  // speed     (0x257)
         2028,  // tmphs     (0x126)
         2029,  // tmpm      (0x356)
-        2084,  // BMS_Vmin  (0x373)
-        2085,  // BMS_Vmax  (0x373)
+        // BMS_Vmin (2084), BMS_Vmax (2085), BMS_Tmin (2086), BMS_Tmax (2087)
+        // are NOT broadcast - they come via SDO polling only
         2070,  // U12V      (0x528)
         0
     };
@@ -670,12 +686,25 @@ void CANDataManager::handleGenericMessage(CANMessage& msg) {
         return;
     }
 
-    if (msg.id == 0x373 && msg.length >= 6) {
+    // SimpBMS 0x373 — layout per ZombieVerter simpbms.cpp
+    // Bytes 0-1: Min cell V (mV)  Bytes 2-3: Max cell V (mV)
+    // Bytes 4-5: Min temp (K)     Bytes 6-7: Max temp (K)
+    // Note: ZombieVerter does not rebroadcast this - values arrive via SDO.
+    // Parser kept here for future direct-BMS setups.
+    if (msg.id == 0x373 && msg.length >= 8) {
+        uint16_t minV = msg.data[0] | (msg.data[1] << 8);
+        uint16_t maxV = msg.data[2] | (msg.data[3] << 8);
+        uint16_t minK = msg.data[4] | (msg.data[5] << 8);
+        uint16_t maxK = msg.data[6] | (msg.data[7] << 8);
         CANParameter* p;
-        p = getParameterByName("BMS_Vmax");
-        if (p) p->setValue((uint16_t)(msg.data[2] | (msg.data[3] << 8)));
         p = getParameterByName("BMS_Vmin");
-        if (p) p->setValue((uint16_t)(msg.data[0] | (msg.data[1] << 8)));
+        if (p) p->setValue((int32_t)minV);
+        p = getParameterByName("BMS_Vmax");
+        if (p) p->setValue((int32_t)maxV);
+        p = getParameterByName("BMS_Tmin");
+        if (p) p->setValue((int32_t)minK - 273);
+        p = getParameterByName("BMS_Tmax");
+        if (p) p->setValue((int32_t)maxK - 273);
         return;
     }
 

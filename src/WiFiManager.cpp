@@ -13,6 +13,8 @@
 #include "CANData.h"
 #include "CANMonitor.h"
 #include "Config.h"
+#include "TripLogger.h"
+#include "GVRETServer.h"
 
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -139,6 +141,7 @@ void WiFiManager::startAP() {
     }
 
     startServer();
+    GVRETServer::getInstance().begin();
     active = true;
 }
 
@@ -148,6 +151,7 @@ void WiFiManager::startAP() {
 void WiFiManager::stopAP() {
     if (!active) return;
     stopServer();
+    GVRETServer::getInstance().stop();
     MDNS.end();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
@@ -159,7 +163,8 @@ void WiFiManager::stopAP() {
 // update — no-op: ESPAsyncWebServer handles everything internally
 // ---------------------------------------------------------------------------
 void WiFiManager::update() {
-    // Intentionally empty — ESPAsyncWebServer is fully non-blocking
+    // ESPAsyncWebServer is fully non-blocking — handle GVRET TCP clients here
+    if (active) GVRETServer::getInstance().update();
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +242,27 @@ void WiFiManager::startServer() {
     server->on("/spot", HTTP_GET, [](AsyncWebServerRequest* request) {
         if (!instance || !instance->can) { request->send(200, "application/json", "{}"); return; }
         instance->handleSpot(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /value?id=N — single live value poll used by gauges.html
+    // -----------------------------------------------------------------------
+    server->on("/value", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(200, "text/plain", "0.00"); return; }
+        instance->handleValue(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /log — GET: CSV trip log download   DELETE: clear log
+    // -----------------------------------------------------------------------
+    server->on("/log", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleTripLog(request);
+    });
+
+    server->on("/log", HTTP_DELETE, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleTripLogDelete(request);
     });
 
     // -----------------------------------------------------------------------
@@ -327,10 +353,30 @@ void WiFiManager::handleCmd(AsyncWebServerRequest* request) {
         serveFile(request, "/params.json");
         return;
 
+    } else if (cmd.startsWith("stream ")) {
+        // plot.js uses this path when inverter.firmwareVersion >= 3.53
+        // format: "stream <repeat> <name1,name2,...>"
+        int firstSpace = cmd.indexOf(' ', 7);
+        if (firstSpace < 0) { request->send(200, "text/plain", ""); return; }
+        int repeat = cmd.substring(7, firstSpace).toInt();
+        if (repeat < 1) repeat = 1;
+        if (repeat > 500) repeat = 500;
+        String names = cmd.substring(firstSpace + 1);
+        names.trim();
+        response = cmdGetRepeated(names, repeat);
+        resp = request->beginResponse(200, "text/plain", response);
+
     } else if (cmd.startsWith("get ")) {
+        // plot.js uses: /cmd?cmd=get name1,name2&repeat=N
         String names = cmd.substring(4);
         names.trim();
-        response = cmdGet(names);
+        int repeat = 1;
+        if (request->hasParam("repeat")) {
+            repeat = request->getParam("repeat")->value().toInt();
+            if (repeat < 1) repeat = 1;
+            if (repeat > 500) repeat = 500;
+        }
+        response = cmdGetRepeated(names, repeat);
         resp = request->beginResponse(200, "text/plain", response);
 
     } else if (cmd.startsWith("set ")) {
@@ -615,6 +661,82 @@ bool WiFiManager::serveFile(AsyncWebServerRequest* request, const String& overri
     }
 
     return false;
+}
+
+// ---------------------------------------------------------------------------
+// cmdGetRepeated — returns <repeat> samples of named params, space-separated
+// plot.js and log.js call /cmd?cmd=get names&repeat=N (or cmd=stream N names).
+// Response is a flat stream of floats; the JS regex matches all of them and
+// distributes them across datasets in signal order.
+// ---------------------------------------------------------------------------
+String WiFiManager::cmdGetRepeated(const String& names, int repeat) {
+    // Parse comma-separated signal names
+    std::vector<String> nameList;
+    int start = 0;
+    while (start < (int)names.length()) {
+        int comma = names.indexOf(',', start);
+        String name = (comma < 0) ? names.substring(start) : names.substring(start, comma);
+        start = (comma < 0) ? names.length() : comma + 1;
+        name.trim();
+        if (name.length() > 0) nameList.push_back(name);
+    }
+    if (nameList.empty()) return "";
+
+    String response;
+    response.reserve(nameList.size() * repeat * 8);
+    for (int r = 0; r < repeat; r++) {
+        for (const String& name : nameList) {
+            char valBuf[24];
+            CANParameter* p = can ? can->getParameterByName(name.c_str()) : nullptr;
+            snprintf(valBuf, sizeof(valBuf), "%.2f", p ? (float)p->getValueAsInt() : 0.0f);
+            response += valBuf;
+            response += " ";
+        }
+    }
+    return response;
+}
+
+// ---------------------------------------------------------------------------
+// handleValue — GET /value?id=N
+// Returns a plain float for the parameter with that ID.
+// gauges.html polls this once per gauge per update interval.
+// ---------------------------------------------------------------------------
+void WiFiManager::handleValue(AsyncWebServerRequest* request) {
+    if (!request->hasParam("id")) {
+        request->send(200, "text/plain", "0.00");
+        return;
+    }
+    uint16_t paramId = (uint16_t)request->getParam("id")->value().toInt();
+    char valBuf[24];
+    CANParameter* p = can ? can->getParameter(paramId) : nullptr;
+    snprintf(valBuf, sizeof(valBuf), "%.2f", p ? (float)p->getValueAsInt() : 0.0f);
+    AsyncWebServerResponse* resp = request->beginResponse(200, "text/plain", String(valBuf));
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    resp->addHeader("Cache-Control", "no-cache");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleTripLog — GET /log
+// Returns the full trip log as a CSV download (chronological, ring buffer order)
+// ---------------------------------------------------------------------------
+void WiFiManager::handleTripLog(AsyncWebServerRequest* request) {
+    String csv = TripLogger::getInstance().getCSV();
+    AsyncWebServerResponse* resp = request->beginResponse(200, "text/csv", csv);
+    resp->addHeader("Content-Disposition", "attachment; filename=\"trip_log.csv\"");
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleTripLogDelete — DELETE /log
+// Clears all trip log entries from NVS
+// ---------------------------------------------------------------------------
+void WiFiManager::handleTripLogDelete(AsyncWebServerRequest* request) {
+    TripLogger::getInstance().clear();
+    AsyncWebServerResponse* resp = request->beginResponse(200, "text/plain", "cleared");
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
 }
 
 // ---------------------------------------------------------------------------

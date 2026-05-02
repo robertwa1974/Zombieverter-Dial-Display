@@ -66,7 +66,7 @@
 #define SLEEP_TIMEOUT_MS    300000  // 5 minutes
 
 // Data Settings
-#define MAX_PARAMETERS      200
+#define MAX_PARAMETERS      250
 #define TX_QUEUE_SIZE       16
 #define RX_QUEUE_SIZE       32
 #define PARAM_UPDATE_INTERVAL_MS  100

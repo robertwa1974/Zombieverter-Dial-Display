@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZombieVerter Display — Offline</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .icon {
+      font-size: 4rem;
+      margin-bottom: 1.5rem;
+      opacity: 0.6;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #00bcd4;
+      margin-bottom: 0.75rem;
+    }
+
+    p {
+      color: #888;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      max-width: 280px;
+      margin-bottom: 0.5rem;
+    }
+
+    .ssid {
+      display: inline-block;
+      margin-top: 1.25rem;
+      background: #111;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 0.75rem 1.25rem;
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
+
+    .ssid span { color: #00bcd4; }
+    .ssid .label { color: #666; font-size: 0.75rem; display: block; margin-bottom: 0.25rem; }
+
+    button {
+      margin-top: 2rem;
+      background: #00bcd4;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:active { opacity: 0.8; }
+  </style>
+</head>
+<body>
+  <div class="icon">⚡</div>
+  <h1>Not connected to M5Dial</h1>
+  <p>Connect your phone to the M5Dial WiFi access point, then tap Retry.</p>
+  <p>Make sure WiFi mode is enabled on the dial (press the button).</p>
+
+  <div class="ssid">
+    <span class="label">Network</span>
+    <span>ZombieVerter-Display</span>
+  </div>
+  <div class="ssid" style="margin-top: 0.5rem">
+    <span class="label">Password</span>
+    <span>zombieverter</span>
+  </div>
+
+  <button onclick="location.reload()">Retry</button>
+</body>
+</html>

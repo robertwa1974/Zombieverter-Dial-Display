@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZV Trip Log</title>
+<style>
+  :root {
+    --bg: #0f172a; --surface: #1e293b; --border: #334155;
+    --accent: #06b6d4; --text: #f1f5f9; --muted: #94a3b8;
+    --danger: #ef4444; --warn: #f59e0b; --green: #22c55e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  header h1 { font-size: 15px; font-weight: 600; color: var(--accent); flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; transition: opacity .15s; }
+  .btn:hover { opacity: .8; } .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-danger  { background: var(--danger); color: #fff; }
+  .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); text-decoration: none; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; padding: 12px 20px; }
+  .stat { background: var(--surface); border-radius: 8px; padding: 9px 12px; }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .stat-value { font-size: 19px; font-weight: 600; margin-top: 2px; }
+  .chart-block { padding: 0 20px 10px; }
+  .chart-legend { font-size: 11px; color: var(--muted); margin-bottom: 5px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .chart-legend span { display: flex; align-items: center; gap: 4px; }
+  .swatch { width: 22px; height: 3px; border-radius: 2px; display: inline-block; }
+  .swatch-dash { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px); }
+  canvas { width: 100%; height: 150px; display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+  .table-wrap { padding: 0 20px 20px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th { background: var(--surface); color: var(--muted); padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; font-weight: 500; }
+  thead th:first-child { text-align: left; }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,.025); }
+  tbody td { padding: 5px 8px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.04); }
+  tbody td:first-child { text-align: left; color: var(--muted); }
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty strong { display: block; font-size: 17px; margin-bottom: 8px; color: var(--text); }
+  #status { padding: 5px 20px; font-size: 12px; color: var(--muted); min-height: 24px; }
+  .spin { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  .hi  { color: var(--warn); }
+  .low { color: var(--green); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ Trip log</h1>
+  <button class="btn btn-primary" onclick="loadLog()">↻ Refresh</button>
+  <button class="btn btn-outline" id="btnDl"    onclick="downloadCSV()" disabled>⬇ CSV</button>
+  <button class="btn btn-danger"  id="btnClear" onclick="clearLog()"    disabled>🗑 Clear</button>
+  <a href="/" class="btn btn-outline">← Back</a>
+</header>
+
+<div id="status" class="spin">Loading…</div>
+
+<div class="stats" id="statsRow" style="display:none">
+  <div class="stat"><div class="stat-label">Entries</div><div class="stat-value" id="s-n">—</div></div>
+  <div class="stat"><div class="stat-label">Duration</div><div class="stat-value" id="s-dur">—</div></div>
+  <div class="stat"><div class="stat-label">Max speed</div><div class="stat-value" id="s-spd">—</div></div>
+  <div class="stat"><div class="stat-label">Min voltage</div><div class="stat-value" id="s-udc">—</div></div>
+  <div class="stat"><div class="stat-label">Peak power</div><div class="stat-value" id="s-pwr">—</div></div>
+  <div class="stat"><div class="stat-label">Peak throttle</div><div class="stat-value" id="s-thr">—</div></div>
+  <div class="stat"><div class="stat-label">SOC used</div><div class="stat-value" id="s-soc">—</div></div>
+  <div class="stat"><div class="stat-label">Max motor °C</div><div class="stat-value" id="s-tm">—</div></div>
+</div>
+
+<!-- Chart 1: Throttle vs Speed — driver input vs vehicle response -->
+<div class="chart-block" id="c1wrap" style="display:none">
+  <div class="chart-legend">
+    <span><span class="swatch" style="background:#06b6d4"></span>Speed (rpm, left)</span>
+    <span><span class="swatch" style="background:#f59e0b"></span>Throttle % (right)</span>
+  </div>
+  <div style="position:relative;width:100%;height:150px">
+    <canvas id="c1" role="img" aria-label="Speed and throttle position over time">Motor speed versus throttle input.</canvas>
+  </div>
+</div>
+
+<!-- Chart 2: Speed vs Power — efficiency shape -->
+<div class="chart-block" id="c2wrap" style="display:none; margin-top:10px;">
+  <div class="chart-legend">
+    <span><span class="swatch" style="background:#a78bfa"></span>Power kW (left)</span>
+    <span><span class="swatch" style="background:#06b6d4"></span>Speed rpm (right)</span>
+  </div>
+  <div style="position:relative;width:100%;height:150px">
+    <canvas id="c2" role="img" aria-label="Power and speed over time">Power output versus speed.</canvas>
+  </div>
+</div>
+
+<!-- Chart 3: Current vs Temperature (thermal lag) -->
+<div class="chart-block" id="c3wrap" style="display:none; margin-top:10px;">
+  <div class="chart-legend">
+    <span><span class="swatch" style="background:#22c55e"></span>Current A (left)</span>
+    <span><span class="swatch" style="background:#ef4444"></span>Motor °C (right)</span>
+    <span><span class="swatch" style="background:#f59e0b; opacity:.7"></span>Heatsink °C (right)</span>
+  </div>
+  <div style="position:relative;width:100%;height:150px">
+    <canvas id="c3" role="img" aria-label="Current draw versus motor and heatsink temperature">Current versus thermal response.</canvas>
+  </div>
+</div>
+
+<div class="table-wrap" id="tblWrap" style="display:none; margin-top:10px;">
+  <table>
+    <thead><tr>
+      <th>#</th><th>Time s</th><th>Speed rpm</th><th>Voltage V</th>
+      <th>Current A</th><th>Power kW</th><th>Throttle %</th>
+      <th>SOC %</th><th>Hsink °C</th><th>Motor °C</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="empty" id="empty" style="display:none">
+  <strong>No trip data yet</strong>
+  Logging starts automatically when speed &gt; 10 RPM.<br>
+  One row every 5 seconds, 200 entries max (ring buffer).
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+let data = [];
+const charts = {};
+
+const COLORS = {
+  speed:   '#06b6d4',
+  power:   '#a78bfa',
+  throttle:'#f59e0b',
+  current: '#22c55e',
+  motorT:  '#ef4444',
+  hsinkT:  '#f59e0b',
+};
+
+async function loadLog() {
+  status('Loading…', true);
+  try {
+    const r = await fetch('/log');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    data = parseCSV(await r.text());
+    render();
+    document.getElementById('btnDl').disabled    = data.length === 0;
+    document.getElementById('btnClear').disabled = data.length === 0;
+    status(data.length ? data.length + ' entries' : 'No data');
+  } catch(e) { status('Error: ' + e.message); }
+}
+
+function parseCSV(csv) {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  return lines.slice(1).map(l => {
+    const [row, time_s, speed, voltage, current, power, soc, heatsink, motor, throttle] = l.split(',').map(Number);
+    return { row, time_s, speed, voltage, current, power, soc, heatsink, motor, throttle: throttle || 0 };
+  }).filter(r => !isNaN(r.row));
+}
+
+function render() {
+  const show = id => document.getElementById(id).style.display = '';
+  const hide = id => document.getElementById(id).style.display = 'none';
+
+  if (!data.length) { ['statsRow','c1wrap','c2wrap','c3wrap','tblWrap'].forEach(hide); show('empty'); return; }
+  hide('empty');
+  ['statsRow','c1wrap','c2wrap','c3wrap','tblWrap'].forEach(show);
+
+  // Stats
+  const dur   = data[data.length-1].time_s - data[0].time_s;
+  const maxSpd = Math.max(...data.map(r => r.speed));
+  const minUdc = Math.min(...data.map(r => r.voltage));
+  const peakPwr= Math.max(...data.map(r => Math.abs(r.power)));
+  const maxThr = Math.max(...data.map(r => r.throttle));
+  const socDelta = data[0].soc - data[data.length-1].soc;
+  const maxMotor = Math.max(...data.map(r => r.motor));
+
+  setText('s-n',   data.length);
+  setText('s-dur', fmtDur(dur));
+  setText('s-spd', maxSpd + ' rpm');
+  setText('s-udc', minUdc.toFixed(1) + ' V');
+  setText('s-pwr', peakPwr.toFixed(1) + ' kW');
+  setText('s-thr', maxThr.toFixed(1) + '%');
+  setText('s-soc', (socDelta >= 0 ? '-' : '+') + Math.abs(socDelta).toFixed(0) + '%');
+  setText('s-tm',  maxMotor + ' °C');
+
+  const labels = data.map(r => r.time_s.toFixed(0));
+
+  // Chart 1: Throttle vs Speed
+  mkChart('c1', labels, [
+    { label:'Speed (rpm)', data: data.map(r=>r.speed),    color: COLORS.speed,    axis:'y'  },
+    { label:'Throttle %',  data: data.map(r=>r.throttle), color: COLORS.throttle, axis:'y2' },
+  ]);
+
+  // Chart 2: Power vs Speed
+  mkChart('c2', labels, [
+    { label:'Power (kW)',  data: data.map(r=>r.power), color: COLORS.power, axis:'y'  },
+    { label:'Speed (rpm)', data: data.map(r=>r.speed), color: COLORS.speed, axis:'y2' },
+  ]);
+
+  // Chart 3: Current vs Temps
+  mkChart('c3', labels, [
+    { label:'Current (A)', data: data.map(r=>r.current), color: COLORS.current, axis:'y'  },
+    { label:'Motor °C',    data: data.map(r=>r.motor),   color: COLORS.motorT,  axis:'y2' },
+    { label:'Heatsink °C', data: data.map(r=>r.heatsink),color: COLORS.hsinkT,  axis:'y2', dash:[4,2] },
+  ]);
+
+  // Table
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  data.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    const tC = r.motor   > 70 ? 'hi' : '';
+    const hC = r.heatsink> 55 ? 'hi' : '';
+    const sC = r.soc < (data[0]?.soc - 2) ? 'low' : '';
+    tr.innerHTML =
+      `<td>${r.row}</td>` +
+      `<td>${r.time_s.toFixed(1)}</td>` +
+      `<td>${r.speed}</td>` +
+      `<td>${r.voltage.toFixed(1)}</td>` +
+      `<td>${r.current.toFixed(1)}</td>` +
+      `<td>${r.power.toFixed(2)}</td>` +
+      `<td>${r.throttle.toFixed(1)}</td>` +
+      `<td class="${sC}">${r.soc}%</td>` +
+      `<td class="${hC}">${r.heatsink}</td>` +
+      `<td class="${tC}">${r.motor}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function mkChart(id, labels, series) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: series.map(s => ({
+        label: s.label,
+        data: s.data,
+        borderColor: s.color,
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        borderDash: s.dash || [],
+        yAxisID: s.axis,
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: 8 },
+          grid:  { color: 'rgba(100,116,139,.15)' }
+        },
+        y: {
+          position: 'left',
+          ticks: { color: series[0].color, font: { size: 10 } },
+          grid:  { color: 'rgba(100,116,139,.15)' }
+        },
+        y2: {
+          position: 'right',
+          ticks: { color: series[1].color, font: { size: 10 } },
+          grid:  { drawOnChartArea: false }
+        }
+      }
+    }
+  });
+}
+
+function downloadCSV() {
+  const hdr = 'row,time_s,speed_rpm,voltage_V,current_A,power_kW,SOC_pct,heatsink_C,motor_C,throttle_pct\n';
+  const body = data.map(r =>
+    [r.row, r.time_s.toFixed(1), r.speed, r.voltage.toFixed(1),
+     r.current.toFixed(1), r.power.toFixed(2), r.soc, r.heatsink, r.motor, r.throttle.toFixed(1)].join(',')
+  ).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([hdr+body], {type:'text/csv'}));
+  a.download = 'trip_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+}
+
+async function clearLog() {
+  if (!confirm('Clear all trip data? Cannot be undone.')) return;
+  status('Clearing…', true);
+  try {
+    const r = await fetch('/log', { method: 'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    data = []; render();
+    document.getElementById('btnDl').disabled    = true;
+    document.getElementById('btnClear').disabled = true;
+    status('Cleared');
+  } catch(e) { status('Error: ' + e.message); }
+}
+
+function setText(id, v) { document.getElementById(id).textContent = v; }
+function status(msg, spin=false) {
+  const el = document.getElementById('status');
+  el.textContent = msg; el.className = spin ? 'spin' : '';
+}
+function fmtDur(s) {
+  return s < 60 ? s.toFixed(0) + 's' : Math.floor(s/60) + 'm ' + (s%60).toFixed(0) + 's';
+}
+
+window.addEventListener('load', loadLog);
+window.addEventListener('resize', () => { if (data.length) render(); });
+</script>
+</body>
+</html>

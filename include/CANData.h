@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <functional>
 #include "Config.h"
 #include "SDOManager.h"
 
@@ -45,10 +46,6 @@ public:
     bool initSDO();    // Starts SDOManager task — call after fetchParamsFromVCU()
     void update();
 
-    // Fetch parameter schema directly from VCU via SDO segmented transfer.
-    // Saves result to SPIFFS as params.json and loads into parameters[].
-    // Call after init() but before sdoManager starts — runs synchronously.
-    // Returns SUCCESS if download and parse succeeded.
     FetchResult fetchParamsFromVCU();
 
     // Parameter management
@@ -80,6 +77,14 @@ public:
     uint32_t getSDOFailureCount()  { return sdoManager.getFailureCount(); }
     uint32_t getSDOTimeoutCount()  { return sdoManager.getTimeoutCount(); }
 
+    // -----------------------------------------------------------------------
+    // Optional raw frame observer — called for every received CAN frame
+    // before processing. Used by GVRETServer to stream frames to SavvyCAN.
+    // Register once in setup(); zero overhead when no callback is set.
+    // -----------------------------------------------------------------------
+    using FrameObserver = std::function<void(uint32_t id, bool extd, const uint8_t* data, uint8_t dlc)>;
+    void setFrameObserver(FrameObserver obs) { _frameObserver = obs; }
+
 private:
     CANParameter parameters[MAX_PARAMETERS];
     uint16_t parameterCount;
@@ -102,10 +107,12 @@ private:
     uint32_t bmsCellUpdateTimes[MAX_BMS_CELLS];
     uint8_t bmsCellCount;
 
+    FrameObserver _frameObserver;  // GVRET bridge callback
+
     // Low-level SDO helpers for segmented download (bypass SDOManager)
     bool sdoSendRaw(uint8_t* data8);
     bool sdoReceiveRaw(twai_message_t* frame, uint32_t timeoutMs = 500);
-    FetchResult fetchParamsAttempt();  // single attempt, called by fetchParamsFromVCU
+    FetchResult fetchParamsAttempt();
 
     void processReceivedMessage(CANMessage& msg);
     void handleSDOResponse(CANMessage& msg);

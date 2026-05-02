@@ -49,6 +49,9 @@ public:
 
     void handleCmd(AsyncWebServerRequest* request);
     void handleSpot(AsyncWebServerRequest* request);
+    void handleValue(AsyncWebServerRequest* request);
+    void handleTripLog(AsyncWebServerRequest* request);
+    void handleTripLogDelete(AsyncWebServerRequest* request);
     void handleRefetch(AsyncWebServerRequest* request);
     void handleWifiGet(AsyncWebServerRequest* request);
     void handleWifiPost(AsyncWebServerRequest* request);
@@ -76,6 +79,7 @@ private:
 
     String cmdJson();
     String cmdGet(const String& names);
+    String cmdGetRepeated(const String& names, int repeat);
     String cmdSet(const String& name, const String& value);
 
     String getContentType(const String& filename);

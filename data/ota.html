@@ -74,6 +74,13 @@
   footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
   footer a { color: var(--cyan); text-decoration: none; }
 </style>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ZV Display">
+<meta name="theme-color" content="#00bcd4">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
 </head>
 <body>
 
@@ -251,6 +258,22 @@ function showStatus(id, type, msg) {
 function hideStatus(id) {
   document.getElementById(id).style.display = 'none';
 }
+</script>
+<script>
+let wakeLock = null;
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  }
+}
+async function releaseWakeLock() {
+  if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+  else releaseWakeLock();
+});
+requestWakeLock();
 </script>
 </body>
 </html>
