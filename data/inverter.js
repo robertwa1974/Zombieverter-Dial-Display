@@ -149,12 +149,12 @@ var inverter = {
 			{
         paramsCache.failedFetchCount += 1;
         if ( paramsCache.failedFetchCount >= 2 ){
-          ui.showCommunicationErrorBar();
+          if (typeof ui !== 'undefined') ui.showCommunicationErrorBar();
         }
 			}
 			if ( paramsCache.failedFetchCount < 2 )
 			{
-				ui.hideCommunicationErrorBar();
+				if (typeof ui !== 'undefined') ui.hideCommunicationErrorBar();
 			}
 			// Fetch live spot values and merge before calling replyFunc
 			inverter.fetchSpotValues(params, replyFunc);

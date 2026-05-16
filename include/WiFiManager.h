@@ -27,10 +27,13 @@
 // =============================================================================
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include "driver/twai.h"
 
 class CANDataManager;
 class AsyncWebServerRequest;
+class UIManager;
+class Immobilizer;
 
 class WiFiManager {
 public:
@@ -42,16 +45,44 @@ public:
     void startAP();
     void stopAP();
 
+    // Called from main.cpp setup() so dial-settings POST can update live objects
+    void setUIManager(UIManager* ui)       { uiManager = ui; }
+    void setImmobilizer(Immobilizer* imm)  { immobilizer = imm; }
+
     String getIPAddress();
     bool isActive() const { return active; }
     bool isRefetchRequested() const { return refetchRequested; }
     void clearRefetchRequest() { refetchRequested = false; }
+    bool isLogoReloadRequested() const { return logoReloadRequested; }
+    void clearLogoReloadRequest() { logoReloadRequested = false; }
+    bool isLogoUploadInProgress() const { return logoUploadInProgress; }
+
+    // PNG buffer — public so static lambdas in startServer() can access via instance->
+    uint8_t* pngBuffer  = nullptr;
+    size_t   pngBufLen  = 0;
+    size_t   pngBufCap  = 0;
+    bool     pngPending = false;
 
     void handleCmd(AsyncWebServerRequest* request);
     void handleSpot(AsyncWebServerRequest* request);
     void handleValue(AsyncWebServerRequest* request);
     void handleTripLog(AsyncWebServerRequest* request);
     void handleTripLogDelete(AsyncWebServerRequest* request);
+    void handleFaultLog(AsyncWebServerRequest* request);
+    void handleFaultLogDelete(AsyncWebServerRequest* request);
+    void handleDialSettingsGet(AsyncWebServerRequest* request);
+    void handleDialSettingsPost(AsyncWebServerRequest* request,
+                                uint8_t* data, size_t len,
+                                size_t index, size_t total);
+    void handleHealthSettingsGet(AsyncWebServerRequest* request);
+    void handleHealthSettingsPost(AsyncWebServerRequest* request,
+                                  uint8_t* data, size_t len,
+                                  size_t index, size_t total);
+    void handleLogoUpload(AsyncWebServerRequest* request,
+                          const String& filename,
+                          size_t index, uint8_t* data,
+                          size_t len, bool final);
+    void handleLogoDelete(AsyncWebServerRequest* request);
     void handleRefetch(AsyncWebServerRequest* request);
     void handleWifiGet(AsyncWebServerRequest* request);
     void handleWifiPost(AsyncWebServerRequest* request);
@@ -70,9 +101,13 @@ public:
 
 private:
     CANDataManager* can;
+    UIManager*      uiManager  = nullptr;
+    Immobilizer*    immobilizer = nullptr;
     bool active;
     bool serverStarted;
     bool refetchRequested = false;
+    bool logoReloadRequested = false;
+    bool logoUploadInProgress = false;  // true while PNG decode runs; pauses SDO polling
 
     void startServer();
     void stopServer();

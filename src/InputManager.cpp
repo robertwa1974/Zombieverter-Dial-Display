@@ -7,10 +7,11 @@ InputManager* InputManager::instance = nullptr;
 InputManager::InputManager() 
     : lastEncoderPosition(0), touchPressed(false), 
       lastTouchX(0), lastTouchY(0), touchPressTime(0),
+      clickCount(0), lastClickTime(0),
       eventHead(0), eventTail(0),
       onEncoderRotate(nullptr), onButtonClick(nullptr),
-      onButtonDoubleClick(nullptr), onButtonLongPress(nullptr),
-      onTouchTap(nullptr),
+      onButtonDoubleClick(nullptr), onButtonTripleClick(nullptr),
+      onButtonLongPress(nullptr), onTouchPress(nullptr), onTouchTap(nullptr),
       button(ENCODER_BUTTON, true, true) {
     instance = this;
 }
@@ -77,8 +78,10 @@ void InputManager::update() {
 }
 
 void InputManager::checkTouch() {
-    M5.update(); // Update touch state
-    
+    // NOTE: M5.update() is called by Hardware::update() in the main loop.
+    // Do NOT call it here — M5Unified touch state is consumed on first call,
+    // so a second M5.update() would clear wasPressed()/wasReleased() before
+    // we can read them.
     auto touch = M5.Touch.getDetail();
     
     if (touch.wasPressed()) {
@@ -86,14 +89,19 @@ void InputManager::checkTouch() {
         lastTouchX = touch.x;
         lastTouchY = touch.y;
         touchPressTime = millis();
-        
+
         InputEvent event;
         event.type = INPUT_TOUCH_PRESS;
         event.touchX = touch.x;
         event.touchY = touch.y;
         event.timestamp = millis();
         enqueueEvent(event);
-        
+
+        // Fire press callback immediately — no tap-window dependency
+        if (onTouchPress) {
+            onTouchPress(touch.x, touch.y);
+        }
+
         #if DEBUG_TOUCH
         Serial.printf("Touch press: %d, %d\n", touch.x, touch.y);
         #endif
@@ -106,8 +114,8 @@ void InputManager::checkTouch() {
         event.timestamp = millis();
         enqueueEvent(event);
         
-        // Check for tap (quick press/release)
-        if (millis() - touchPressTime < 300) {
+        // Check for tap (quick press/release) — 500ms to account for LVGL loop lag
+        if (millis() - touchPressTime < 500) {
             InputEvent tapEvent;
             tapEvent.type = INPUT_TOUCH_TAP;
             tapEvent.touchX = touch.x;
@@ -161,12 +169,20 @@ void InputManager::setOnButtonDoubleClick(void (*callback)()) {
     onButtonDoubleClick = callback;
 }
 
+void InputManager::setOnButtonTripleClick(void (*callback)()) {
+    onButtonTripleClick = callback;
+}
+
 void InputManager::setOnButtonLongPress(void (*callback)()) {
     onButtonLongPress = callback;
 }
 
 void InputManager::setOnTouchTap(void (*callback)(uint16_t, uint16_t)) {
     onTouchTap = callback;
+}
+
+void InputManager::setOnTouchPress(void (*callback)(uint16_t, uint16_t)) {
+    onTouchPress = callback;
 }
 
 bool InputManager::enqueueEvent(InputEvent& event) {
@@ -187,26 +203,61 @@ bool InputManager::dequeueEvent(InputEvent& event) {
 }
 
 void InputManager::buttonClickCallback() {
-    if (instance && instance->onButtonClick) {
+    if (!instance) return;
+
+    uint32_t now = millis();
+
+    // If too long since last click, reset count
+    if (now - instance->lastClickTime > TRIPLE_CLICK_WINDOW_MS) {
+        instance->clickCount = 0;
+    }
+    instance->clickCount++;
+    instance->lastClickTime = now;
+
+    // Triple-click fires immediately on 3rd click
+    if (instance->clickCount >= 3) {
+        instance->clickCount = 0;
+        if (instance->onButtonTripleClick) {
+            instance->onButtonTripleClick();
+        }
+        InputEvent event;
+        event.type = INPUT_BUTTON_TRIPLE_CLICK;
+        event.timestamp = now;
+        instance->enqueueEvent(event);
+        return;
+    }
+    // Single/double clicks are deferred — OneButton's doubleClick callback
+    // handles those. We only fire single-click here if it's clearly just one.
+    // OneButton already handles single vs double disambiguation, so we let
+    // the existing onButtonClick callback handle single clicks as before.
+    if (instance->onButtonClick) {
         instance->onButtonClick();
     }
-    
-    if (instance) {
-        InputEvent event;
-        event.type = INPUT_BUTTON_CLICK;
-        event.timestamp = millis();
-        instance->enqueueEvent(event);
-    }
+    InputEvent event;
+    event.type = INPUT_BUTTON_CLICK;
+    event.timestamp = now;
+    instance->enqueueEvent(event);
 }
 
 void InputManager::buttonDoubleClickCallback() {
-    if (instance && instance->onButtonDoubleClick) {
+    if (!instance) return;
+    instance->clickCount = 0;  // reset — double already consumed these clicks
+    if (instance->onButtonDoubleClick) {
         instance->onButtonDoubleClick();
     }
-    
+    InputEvent event;
+    event.type = INPUT_BUTTON_DOUBLE_CLICK;
+    event.timestamp = millis();
+    instance->enqueueEvent(event);
+}
+
+void InputManager::buttonTripleClickCallback() {
+    if (instance && instance->onButtonTripleClick) {
+        instance->onButtonTripleClick();
+    }
     if (instance) {
         InputEvent event;
-        event.type = INPUT_BUTTON_DOUBLE_CLICK;
+        event.type = INPUT_BUTTON_TRIPLE_CLICK;
         event.timestamp = millis();
         instance->enqueueEvent(event);
     }

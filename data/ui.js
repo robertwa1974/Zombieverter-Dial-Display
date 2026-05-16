@@ -221,6 +221,12 @@ var ui = {
 						ui.addRow(tableParam, [ '<BUTTON onclick="ui.toggleVisibility(\'' +
 							param.category + '\');" style="background: none; border: none; font-weight: bold;">' + icon + ' ' +
 							param.category + '</BUTTON>' ], true);
+						// Colour the header row by category
+						var hdr = tableParam.rows[tableParam.rows.length - 1];
+						var cc = ui.getCategoryColor(param.category);
+						hdr.style.borderLeft = '4px solid ' + cc;
+						hdr.style.backgroundColor = ui.getCategoryBg(param.category);
+						hdr.cells[0].style.color = cc;
 						lastCategory = param.category;
 					}
 
@@ -229,7 +235,7 @@ var ui = {
 						if (param.enums[param.value])
 						{
 
-						    valInput = '<SELECT onchange="ui.showParamUpdateModal(\'' + name + '\', this.value)">';
+						    valInput = '<SELECT data-name="' + name + '" data-original="' + param.value + '" onchange="ui.markParamChanged(this)">';
 
 						    for (var idx in param.enums)
 						    {
@@ -254,13 +260,17 @@ var ui = {
 					else
 					{
 						valInput = '<INPUT type="number" min="' + param.minimum + '" max="' + param.maximum +
-							'" step="0.05" value="' + param.value + '" onchange="ui.showParamUpdateModal(\'' + name + '\', this.value)"/>';
+							'" step="0.05" value="' + param.value + '" data-original="' + param.value +
+							'" data-name="' + name + '" data-min="' + param.minimum + '" data-max="' + param.maximum +
+							'" oninput="ui.markParamChanged(this)"/>';
 					}
 
 					if (param.i !== undefined)
 					    index = param.i;
 
 					ui.addRow(tableParam, [ index, nameWithTooltip, valInput, unit, param.minimum, param.maximum, param.default ], ui.categoryVisible[param.category]);
+						// Colour the param row left border by category
+						tableParam.rows[tableParam.rows.length - 1].style.borderLeft = '3px solid ' + ui.getCategoryColor(param.category);
 				}
 				else
 				{
@@ -292,6 +302,12 @@ var ui = {
 					}
 
 					ui.addRow(tableSpot, [ nameWithTooltip, display, unit ], true);
+					// Colour spot value row by unit type
+					var sr = tableSpot.rows[tableSpot.rows.length - 1];
+					var sc = ui.getSpotColor(param.unit);
+					sr.style.borderLeft = '3px solid ' + sc;
+					sr.cells[1].style.color = sc;
+					sr.cells[1].style.fontWeight = '500';
 				}
 			}
       ui.populateVersion();
@@ -1357,4 +1373,162 @@ var ui = {
 	/**
 	 * WIFI SETTINGS
 	 */
+
+	/** @brief Returns a colour for a parameter category name (used for row colouring) */
+	getCategoryColor: function(category) {
+		var c = (category || '').toLowerCase();
+		if (c.indexOf('motor')   >= 0 || c.indexOf('drive')   >= 0) return '#1565c0'; // blue
+		if (c.indexOf('invert')  >= 0 || c.indexOf('power')   >= 0) return '#6a1b9a'; // purple
+		if (c.indexOf('charg')   >= 0 || c.indexOf('batter')  >= 0) return '#2e7d32'; // green
+		if (c.indexOf('throt')   >= 0 || c.indexOf('control') >= 0) return '#e65100'; // orange
+		if (c.indexOf('temp')    >= 0 || c.indexOf('thermal') >= 0) return '#b71c1c'; // red
+		if (c.indexOf('regen')   >= 0 || c.indexOf('brake')   >= 0) return '#4e342e'; // brown
+		if (c.indexOf('can')     >= 0 || c.indexOf('comm')    >= 0) return '#00695c'; // teal
+		if (c.indexOf('safety')  >= 0 || c.indexOf('limit')   >= 0) return '#c62828'; // dark red
+		return '#37474f'; // default dark grey
+	},
+
+	/** @brief Returns a faint background tint matching getCategoryColor */
+	getCategoryBg: function(category) {
+		var c = (category || '').toLowerCase();
+		if (c.indexOf('motor')   >= 0 || c.indexOf('drive')   >= 0) return '#e3f2fd';
+		if (c.indexOf('invert')  >= 0 || c.indexOf('power')   >= 0) return '#f3e5f5';
+		if (c.indexOf('charg')   >= 0 || c.indexOf('batter')  >= 0) return '#e8f5e9';
+		if (c.indexOf('throt')   >= 0 || c.indexOf('control') >= 0) return '#fbe9e7';
+		if (c.indexOf('temp')    >= 0 || c.indexOf('thermal') >= 0) return '#ffebee';
+		if (c.indexOf('regen')   >= 0 || c.indexOf('brake')   >= 0) return '#efebe9';
+		if (c.indexOf('can')     >= 0 || c.indexOf('comm')    >= 0) return '#e0f2f1';
+		if (c.indexOf('safety')  >= 0 || c.indexOf('limit')   >= 0) return '#ffebee';
+		return '#eceff1';
+	},
+
+	/** @brief Returns a colour for a spot value unit (used for row colouring) */
+	getSpotColor: function(unit) {
+		var u = (unit || '').toLowerCase().trim();
+		if (u === 'a'   || u === 'ma')               return '#1565c0';
+		if (u === 'v'   || u === 'mv')               return '#6a1b9a';
+		if (u.indexOf('rpm') >= 0)                   return '#e65100';
+		if (u.indexOf('\u00b0c') >= 0 || u === 'c')  return '#b71c1c';
+		if (u === 'kw'  || u === 'w')                return '#2e7d32';
+		if (u === '%')                               return '#00695c';
+		return '#37474f';
+	},
+
+	// -------------------------------------------------------------------------
+	// Parameter editing — staged apply with range validation and colour feedback
+	// -------------------------------------------------------------------------
+
+	/** @brief Mark an input/select as changed (orange) when the user edits it */
+	markParamChanged: function(el) {
+		var original = el.dataset.original;
+		if (el.value !== original) {
+			el.style.borderColor = '#ff9800';
+			el.style.background  = '#fff8e1';
+		} else {
+			el.style.borderColor = '';
+			el.style.background  = '';
+		}
+		// Show unsaved reminder
+		var remind = document.getElementById('param-unsaved-remind');
+		var hasChanges = document.querySelectorAll('#params input[style*="ff9800"], #params select[style*="ff9800"]').length > 0;
+		if (remind) remind.style.display = hasChanges ? 'block' : 'none';
+	},
+
+	/** @brief Apply all changed parameter inputs — validate, send sequentially via SDO */
+	applyParamChanges: function() {
+		var inputs = document.querySelectorAll('#params input[oninput], #params select[onchange]');
+		var toApply = [];
+		var errors  = [];
+
+		inputs.forEach(function(el) {
+			if (el.style.borderColor !== 'rgb(255, 152, 0)' && el.style.borderColor !== '#ff9800') return;
+			var name = el.dataset.name;
+			var val  = el.value;
+			var min  = parseFloat(el.dataset.min);
+			var max  = parseFloat(el.dataset.max);
+
+			// Range check for number inputs
+			if (el.tagName === 'INPUT') {
+				var v = parseFloat(val);
+				if (isNaN(v)) {
+					errors.push(name + ': not a number');
+					el.style.borderColor = '#f44336';
+					el.style.background  = '#fff0f0';
+					return;
+				}
+				if (!isNaN(min) && !isNaN(max) && (v < min || v > max)) {
+					errors.push(name + ': ' + v + ' out of range [' + min + ', ' + max + ']');
+					el.style.borderColor = '#f44336';
+					el.style.background  = '#fff0f0';
+					return;
+				}
+			}
+			toApply.push({ el: el, name: name, val: val });
+		});
+
+		if (errors.length) {
+			document.getElementById('message').innerHTML =
+				'<span style="color:#f44336">Error: ' + errors.join(' | ') + '</span>';
+			return;
+		}
+		if (!toApply.length) {
+			document.getElementById('message').innerHTML = 'No changes to apply.';
+			return;
+		}
+
+		var btnApply = document.getElementById('btn-param-apply');
+		if (btnApply) btnApply.disabled = true;
+		document.getElementById('message').innerHTML = 'Sending ' + toApply.length + ' change(s)...';
+
+		var idx = 0;
+		function sendNext() {
+			if (idx >= toApply.length) {
+				if (btnApply) btnApply.disabled = false;
+				document.getElementById('message').innerHTML =
+					'<span style="color:#2e7d32">✓ ' + toApply.length + ' parameter(s) applied. Click Save to Flash to persist.</span>';
+				var remind = document.getElementById('param-unsaved-remind');
+				if (remind) remind.style.display = 'block';
+				return;
+			}
+			var item = toApply[idx++];
+			inverter.sendCmd('set ' + item.name + ' ' + item.val, function(reply) {
+				if (reply && reply.trim() === '1') {
+					item.el.style.borderColor = '#4CAF50';
+					item.el.style.background  = '#e8f5e9';
+					item.el.dataset.original  = item.val;
+				} else {
+					item.el.style.borderColor = '#f44336';
+					item.el.style.background  = '#fff0f0';
+					document.getElementById('message').innerHTML =
+						'<span style="color:#f44336">Error on ' + item.name + ': ' + reply + '</span>';
+				}
+				setTimeout(sendNext, 150);
+			});
+		}
+		sendNext();
+	},
+
+	/** @brief Save parameters to VCU flash — clears unsaved banner on success */
+	saveParamChanges: function() {
+		var btn = document.getElementById('btn-param-save');
+		if (btn) btn.disabled = true;
+		inverter.sendCmd('save', function(reply) {
+			if (btn) btn.disabled = false;
+			if (reply && reply.trim() === '1') {
+				var remind = document.getElementById('param-unsaved-remind');
+				if (remind) remind.style.display = 'none';
+				// Reset all green inputs back to normal
+				document.querySelectorAll('#params input[style], #params select[style]').forEach(function(el) {
+					el.style.borderColor = '';
+					el.style.background  = '';
+				});
+				document.getElementById('message').innerHTML =
+					'<span style="color:#2e7d32">✓ Parameters saved to VCU flash.</span>';
+			} else {
+				document.getElementById('message').innerHTML =
+					'<span style="color:#f44336">Save failed: ' + reply + '</span>';
+			}
+		});
+	}
 }
+

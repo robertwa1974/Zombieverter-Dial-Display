@@ -6,9 +6,9 @@ bool Hardware::isSleeping = false;
 
 bool Hardware::init() {
     auto cfg = M5.config();
-    
+
     M5.begin(cfg);
-    
+
     // Hold power on
     pinMode(POWER_HOLD_PIN, OUTPUT);
     digitalWrite(POWER_HOLD_PIN, HIGH);

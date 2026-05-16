@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZV Fault Log</title>
+<style>
+  :root { --bg:#0f172a; --surface:#1e293b; --border:#334155; --accent:#06b6d4; --text:#f1f5f9; --muted:#94a3b8; --danger:#ef4444; --warn:#f59e0b; --green:#22c55e; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:14px; }
+  header { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 20px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  header h1 { font-size:15px; font-weight:600; color:var(--accent); flex:1; }
+  .btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:6px; border:none; cursor:pointer; font-size:12px; font-weight:500; transition:opacity .15s; }
+  .btn:hover{opacity:.8;} .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .btn-primary{background:var(--accent);color:#000;}
+  .btn-danger{background:var(--danger);color:#fff;}
+  .btn-outline{background:transparent;color:var(--text);border:1px solid var(--border);text-decoration:none;}
+  #status { padding:5px 20px; font-size:12px; color:var(--muted); min-height:24px; }
+  .spin { animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+  .empty { text-align:center; padding:60px 20px; color:var(--muted); }
+  .empty strong { display:block; font-size:17px; margin-bottom:8px; color:var(--text); }
+  .table-wrap { padding:0 20px 20px; overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  thead th { background:var(--surface); color:var(--muted); padding:7px 10px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; font-weight:500; }
+  tbody tr:nth-child(even){background:rgba(255,255,255,.025);}
+  tbody td { padding:5px 10px; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:top; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:11px; font-weight:600; }
+  .badge-fault { background:rgba(239,68,68,.2); color:var(--danger); }
+  .badge-opmode { background:rgba(6,182,212,.15); color:var(--accent); }
+  .code { font-family:monospace; font-size:11px; color:var(--warn); }
+  .opmode-run { color:var(--green); }
+  .opmode-charge { color:var(--accent); }
+  .opmode-off { color:var(--muted); }
+  .opmode-warn { color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Fault &amp; Event Log</h1>
+  <button class="btn btn-primary" onclick="loadLog()">↻ Refresh</button>
+  <button class="btn btn-danger" id="btnClear" onclick="clearLog()" disabled>🗑 Clear</button>
+  <a href="/" class="btn btn-outline">← Back</a>
+</header>
+<div id="status" class="spin">Loading…</div>
+
+<div id="empty" style="display:none" class="empty">
+  <strong>No faults or events recorded</strong>
+  SDO abort codes and opmode transitions are logged automatically.<br>
+  Data persists across power cycles until cleared.
+</div>
+
+<div id="tableWrap" class="table-wrap" style="display:none">
+  <table>
+    <thead><tr>
+      <th>Time (s)</th><th>Type</th><th>Opmode</th><th>Code</th><th>Description</th><th>Param ID</th>
+    </tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+async function loadLog() {
+  status('Loading…', true);
+  try {
+    const r = await fetch('/faults');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    render(data);
+    document.getElementById('btnClear').disabled = data.length === 0;
+    status(data.length ? data.length + ' entries' : 'No data');
+  } catch(e) { status('Error: ' + e.message); }
+}
+
+function render(data) {
+  const show = id => document.getElementById(id).style.display = '';
+  const hide = id => document.getElementById(id).style.display = 'none';
+
+  if (!data.length) { show('empty'); hide('tableWrap'); return; }
+  hide('empty'); show('tableWrap');
+
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  data.forEach(r => {
+    const tr = document.createElement('tr');
+    const typeClass = r.type === 'fault' ? 'badge-fault' : 'badge-opmode';
+    const typeLabel = r.type === 'fault' ? '⚠ FAULT' : '→ OPMODE';
+    const opmodeClass = opmodeColor(r.opmode);
+    tr.innerHTML =
+      `<td>${r.t.toFixed(1)}</td>` +
+      `<td><span class="badge ${typeClass}">${typeLabel}</span></td>` +
+      `<td class="${opmodeClass}">${r.opmode}</td>` +
+      `<td class="code">${r.code || '—'}</td>` +
+      `<td>${r.desc || '—'}</td>` +
+      `<td>${r.param != null ? r.param : '—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function opmodeColor(mode) {
+  if (!mode) return '';
+  if (mode === 'Run') return 'opmode-run';
+  if (mode === 'Charge') return 'opmode-charge';
+  if (mode === 'Off') return 'opmode-off';
+  return 'opmode-warn';
+}
+
+async function clearLog() {
+  if (!confirm('Clear all fault log entries? Cannot be undone.')) return;
+  status('Clearing…', true);
+  try {
+    const r = await fetch('/faults', { method:'DELETE' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    render([]);
+    document.getElementById('btnClear').disabled = true;
+    status('Cleared');
+  } catch(e) { status('Error: ' + e.message); }
+}
+
+function status(msg, spin=false) {
+  const el = document.getElementById('status');
+  el.textContent = msg; el.className = spin ? 'spin' : '';
+}
+
+window.addEventListener('load', loadLog);
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
+#include <Preferences.h>
 #include "Config.h"
 #include "Hardware.h"
 #include "CANData.h"
@@ -9,12 +10,22 @@
 #include "WiFiManager.h"
 #include "TripLogger.h"
 #include "GVRETServer.h"
+#include "FaultLogger.h"
+#include "HealthChecker.h"
+#include "EfficiencyTracker.h"
+#include "Immobilizer.h"
+#include "SDOManager.h"
+
+// ── Firmware version strings — update on each release ────────────────────────
+#define DIAL_FW_VERSION   "v2.5.0"   // M5Dial firmware version
+#define UI_VERSION        "v2.5.0"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
 InputManager inputManager;
 UIManager uiManager;
 WiFiManager wifiManager;
+Immobilizer immobilizer;
 
 // State tracking
 bool systemReady = false;
@@ -22,6 +33,7 @@ bool wifiMode = false;
 bool lvglSuspended = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
+uint8_t lastOpmode = 255;  // opmode change detection (255 = uninitialised)
 
 // Fallback parameters — used only if SPIFFS params.json is missing or corrupt.
 const char* sampleParams = R"(
@@ -40,6 +52,27 @@ const char* sampleParams = R"(
   ]
 }
 )";
+
+// ============================================================================
+// SDO result callback — routes results to the immobilizer (param 156 / spot 2124)
+// and to canManager for all other spot-value updates.
+//
+// IMPORTANT: Immobilizer.cpp uses a state-machine retry pattern — onSDOResult
+// never calls sendDriveInhibit() directly on failure. It sets writePending and
+// lets update() fire the retry after a backoff delay. This prevents the TWAI
+// TX queue flood (ESP_ERR_TIMEOUT loop) seen with the direct-retry approach.
+// ============================================================================
+
+void onSDOResult(const SDOResult& result) {
+    // Immobilizer owns param 156 (DriveInhibit write) and spot 2124 (DriveInhibited read)
+    if (result.paramId == VCU_PARAM_DRIVE_INHIBIT ||
+        result.paramId == VCU_SPOT_DRIVE_INHIBITED) {
+        immobilizer.onSDOResult(result);
+        return;   // don't pass these to canManager — they're not CAN data params
+    }
+    // Everything else: let canManager update its parameter table
+    canManager.onSDOResult(result);
+}
 
 // ============================================================================
 // WiFi mode helpers
@@ -69,7 +102,7 @@ void onEncoderRotate(int32_t delta) {
     if (wifiMode) {
         // Any rotation exits WiFi mode
         wifiMode = false;
-        wifiManager.stopAP();
+        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
         uiManager.resetWifiScreen();
         resumeLVGL();
         uiManager.setScreen(SCREEN_DASHBOARD);
@@ -78,9 +111,43 @@ void onEncoderRotate(int32_t delta) {
 
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
+    // Lock screen
+    if (currentScreen == SCREEN_LOCK) {
+        ImmobMode m = immobilizer.getMode();
+        if (uiManager.isLockPinPadVisible() ||
+            m == ImmobMode::CHANGE_PIN_1 ||
+            m == ImmobMode::CHANGE_PIN_2) {
+            // Digit selection active
+            if (delta > 0) immobilizer.incrementDigit();
+            else           immobilizer.decrementDigit();
+        } else if (m == ImmobMode::UNLOCKED) {
+            // Padlock view, unlocked — rotate aborts back to dashboard
+            uiManager.setScreen(SCREEN_DASHBOARD);
+        }
+        // Padlock view + locked: rotation does nothing
+        return;
+    }
+
+    // Settings screen: rotate scrolls menu; scrolling past ends navigates away
+    if (currentScreen == SCREEN_SETTINGS) {
+        int current = uiManager.getSettingsSelectedItem();
+        int next = current + (delta > 0 ? 1 : -1);
+        if (next < 0) {
+            // Scrolled past top — go to previous screen
+            uiManager.setScreen(uiManager.getPreviousScreen());
+        } else if (next >= uiManager.getSettingsMenuCount()) {
+            // Scrolled past bottom — go to next screen
+            uiManager.setScreen(uiManager.getNextScreen());
+        } else {
+            uiManager.scrollSettingsMenu(delta > 0 ? 1 : -1);
+        }
+        return;
+    }
+
     if (currentScreen == SCREEN_GEAR) {
         if (!uiManager.isEditMode()) {
-            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+            uiManager.setScreen(dest);
             return;
         }
         // Safety: block gear change while moving
@@ -97,7 +164,8 @@ void onEncoderRotate(int32_t delta) {
         }
     } else if (currentScreen == SCREEN_MOTOR) {
         if (!uiManager.isEditMode()) {
-            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+            uiManager.setScreen(dest);
             return;
         }
         // Safety: block motor mode change while moving
@@ -114,7 +182,8 @@ void onEncoderRotate(int32_t delta) {
         }
     } else if (currentScreen == SCREEN_REGEN) {
         if (!uiManager.isEditMode()) {
-            uiManager.setScreen(delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen());
+            ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+            uiManager.setScreen(dest);
             return;
         }
         CANParameter* regen = canManager.getParameter(61);
@@ -126,16 +195,47 @@ void onEncoderRotate(int32_t delta) {
             canManager.setParameter(61, newRegen);
         }
     } else {
-        if (delta > 0) {
-            uiManager.setScreen(uiManager.getNextScreen());
-        } else {
-            uiManager.setScreen(uiManager.getPreviousScreen());
+        ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+        if (dest == SCREEN_SETTINGS) {
         }
+        uiManager.setScreen(dest);
     }
 }
 
 void onButtonClick() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
+
+    // Lock screen
+    if (currentScreen == SCREEN_LOCK) {
+        ImmobMode m = immobilizer.getMode();
+        if (uiManager.isLockPinPadVisible() ||
+            m == ImmobMode::CHANGE_PIN_1 ||
+            m == ImmobMode::CHANGE_PIN_2) {
+            // Digit entry active — confirm current digit
+            immobilizer.enterDigit(immobilizer.getCurrentDigit());
+        } else if (m == ImmobMode::UNLOCKED) {
+            // Padlock view, unlocked — button aborts back to dashboard
+            uiManager.setScreen(SCREEN_DASHBOARD);
+        }
+        return;
+    }
+
+    // Health check screen — button press acknowledges warn/fail result
+    if (currentScreen == SCREEN_HEALTH_CHECK) {
+        if (HealthChecker::getInstance().needsAck()) {
+            bool relock = HealthChecker::getInstance().relockNeeded();
+            HealthChecker::getInstance().acknowledge();
+            if (relock) {
+                immobilizer.lock();
+                uiManager.setScreen(SCREEN_LOCK);
+            }
+        }
+        return;
+    }
+
+    // Settings screen: activated by touch tap (see onTouchTap)
+    // Button click does nothing on settings screen — prevents accidental activation
+    if (currentScreen == SCREEN_SETTINGS) return;
 
     // On editable screens: first click enters edit mode, second click exits
     if (currentScreen == SCREEN_GEAR ||
@@ -159,8 +259,8 @@ void onButtonClick() {
 
     if (!wifiMode) {
         wifiMode = true;
+        immobilizer.setBLEEnabled(false);  // pause BLE to avoid radio contention
         wifiManager.startAP();
-        // Update WiFi screen with IP while LVGL still running
         uiManager.setScreen(SCREEN_WIFI);
         uiManager.updateWifiScreen(wifiManager.getIPAddress());
         for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
@@ -170,7 +270,7 @@ void onButtonClick() {
         #endif
     } else {
         wifiMode = false;
-        wifiManager.stopAP();
+        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
         uiManager.resetWifiScreen();
         resumeLVGL();
         uiManager.setScreen(SCREEN_DASHBOARD);
@@ -181,24 +281,71 @@ void onButtonClick() {
 }
 
 void onButtonDoubleClick() {
-    // Reserved
+    // Double-click cancels any active programming/pairing mode
+    ImmobMode m = immobilizer.getMode();
+    if (m == ImmobMode::PROGRAM_FOB ||
+        m == ImmobMode::CHANGE_PIN_1 ||
+        m == ImmobMode::CHANGE_PIN_2 ||
+        m == ImmobMode::PAIR_BLE) {
+        immobilizer.cancelProgramming();
+        uiManager.setScreen(SCREEN_LOCK);
+    }
+}
+
+void onButtonTripleClick() {
+    // Reserved for future use
 }
 
 void onButtonLongPress() {
+    ScreenID currentScreen = uiManager.getCurrentScreen();
+
     if (wifiMode) {
         wifiMode = false;
-        wifiManager.stopAP();
+        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
         uiManager.resetWifiScreen();
         resumeLVGL();
+        return;
     }
+
+    // Long-press from any screen while unlocked → navigate to lock screen.
+    // Actual locking requires a deliberate tap on that screen (two-step safety).
+    if (immobilizer.getMode() == ImmobMode::UNLOCKED) {
+        uiManager.setScreen(SCREEN_LOCK);
+        return;
+    }
+
+    // Long-press on lock screen while already locked → lock (redundant safety)
+    if (currentScreen == SCREEN_LOCK) {
+        if (immobilizer.isUnlocked()) {
+            immobilizer.lock();
+            uiManager.setScreen(SCREEN_LOCK);
+        }
+        return;
+    }
+
     uiManager.setScreen(SCREEN_DASHBOARD);
+}
+
+// Fires immediately on finger-down — used for lock screen reveal only
+void onTouchPress(uint16_t x, uint16_t y) {
+    if (uiManager.getCurrentScreen() == SCREEN_LOCK) {
+        if (immobilizer.getMode() == ImmobMode::LOCKED &&
+            !uiManager.isLockPinPadVisible()) {
+            // Locked + tapped → show PIN pad to unlock
+            uiManager.showLockPinPad();
+        } else if (immobilizer.getMode() == ImmobMode::UNLOCKED) {
+            // Unlocked + tapped → lock the vehicle (step 2 of deliberate lock process)
+            immobilizer.lock();
+            uiManager.setScreen(SCREEN_LOCK);
+        }
+    }
 }
 
 void onTouchTap(uint16_t x, uint16_t y) {
     if (wifiMode) {
         // Touch exits WiFi mode
         wifiMode = false;
-        wifiManager.stopAP();
+        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
         uiManager.resetWifiScreen();
         resumeLVGL();
         uiManager.setScreen(SCREEN_DASHBOARD);
@@ -206,6 +353,42 @@ void onTouchTap(uint16_t x, uint16_t y) {
     }
 
     ScreenID currentScreen = uiManager.getCurrentScreen();
+
+    // Lock screen handled by onTouchPress — nothing more to do here
+    if (currentScreen == SCREEN_LOCK) return;
+
+    // Settings screen: tap activates the highlighted menu item.
+    // Debounce: ignore taps for 600ms after arrival — rotating the M5Dial
+    // capacitive bezel generates spurious touch events while turning.
+    if (currentScreen == SCREEN_SETTINGS && immobilizer.isUnlocked()) {
+        if (millis() - uiManager.getSettingsArrivalTime() < 600) return;
+        switch (uiManager.getSettingsSelectedItem()) {
+            case 0:  // Pair BLE Beacon
+                immobilizer.startPairBLE();
+                uiManager.setScreen(SCREEN_LOCK);
+                break;
+            case 1:  // Program RFID Fob
+                immobilizer.startProgramFob();
+                uiManager.setScreen(SCREEN_LOCK);
+                break;
+            case 2:  // Clear BLE Beacons
+                immobilizer.clearBLEUUIDs();
+                uiManager.showWarning("BLE beacons\ncleared");
+                break;
+            case 3:  // Clear RFID Fobs
+                immobilizer.clearAllFobs();
+                uiManager.showWarning("RFID fobs\ncleared");
+                break;
+            case 4:  // System Info
+                uiManager.showSystemInfo();
+                break;
+            case 5:  // Change PIN
+                immobilizer.startChangePin();
+                uiManager.setScreen(SCREEN_LOCK);
+                break;
+        }
+        return;
+    }
 
     if (currentScreen == SCREEN_GEAR) {
         if (y >= 170 && y <= 236) {
@@ -257,7 +440,10 @@ void setup() {
     Serial.println("Hardware initialized");
     #endif
 
-    uiManager.init(&canManager);
+    SPIFFS.begin(true);  // Must be before uiManager.init so /logo.bin is visible at splash creation
+
+    uiManager.init(&canManager, &immobilizer);
+    uiManager.setVersionInfo(DIAL_FW_VERSION, UI_VERSION);
     uint32_t splashStart = millis();
     while (millis() - splashStart < 2000) {
         lv_timer_handler();
@@ -290,6 +476,8 @@ void setup() {
         Serial.println("WiFi manager init failed!");
         #endif
     }
+    wifiManager.setUIManager(&uiManager);
+    wifiManager.setImmobilizer(&immobilizer);
     #if DEBUG_SERIAL
     Serial.println("WiFi manager initialized");
     #endif
@@ -298,8 +486,6 @@ void setup() {
 
     wifiMode = false;
     lvglSuspended = false;
-
-    SPIFFS.begin(true);
 
     // -----------------------------------------------------------------------
     // Parameter loading — try in order:
@@ -352,8 +538,73 @@ void setup() {
     // Start SDO manager AFTER fetch so it doesn't consume our response frames
     canManager.initSDO();
 
+    // Route SDO results: immobilizer handles param 156 and spot 2124;
+    // everything else goes to canManager for spot-value updates.
+    canManager.getSDOManager()->setResultCallback(onSDOResult);
+
+    // Initialize immobilizer — boots locked, reads VCU state via SDO.
+    // NOTE: Requires CANDataManager::getSDOManager() to return SDOManager*.
+    //       If that method doesn't exist yet, add it to CANData.h/.cpp.
+    immobilizer.init(canManager.getSDOManager());
+
+    // Apply persisted display settings: screen visibility mask and immobilizer enable
+    {
+        Preferences prefs;
+        prefs.begin("dialsettings", true);
+        uint16_t screenMask   = prefs.getUShort("screenMask",   0xFFFF);
+        bool     immobEnabled = prefs.getBool("immobEnabled",   true);
+        uint16_t immobWriteId = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
+        uint16_t immobReadId  = prefs.getUShort("immobReadId",  VCU_SPOT_DRIVE_INHIBITED);
+        prefs.end();
+        uiManager.setScreenMask(screenMask);
+        immobilizer.setEnabled(immobEnabled);
+        immobilizer.setInhibitParams(immobWriteId, immobReadId);
+        Serial.printf("[Main] screenMask=0x%04X immobEnabled=%d writeId=%u readId=%u\n",
+                      screenMask, immobEnabled, immobWriteId, immobReadId);
+    }
+
+    // On every unlock (PIN or RFID): run pre-drive health check then go to dashboard
+    immobilizer.setOnUnlock([]() {
+        HealthChecker::getInstance().reset();
+        HealthChecker::getInstance().startCheck();
+        uiManager.setScreen(SCREEN_HEALTH_CHECK);
+    });
+
+    // BLE proximity unlock skips the health check — goes straight to dashboard
+    // Health check is for PIN/RFID (about to drive); BLE may just be parking nearby
+    immobilizer.setOnBLEUnlock([]() {
+        uiManager.setScreen(SCREEN_DASHBOARD);
+    });
+
+    immobilizer.setOnSuccess([](const char* msg) {
+        uiManager.showSuccess(msg);
+    });
+
+    immobilizer.setOnWarning([](const char* msg) {
+        uiManager.showWarning(msg);
+    });
+
     // Initialize trip logger (reads existing NVS ring buffer state)
     TripLogger::getInstance().begin();
+
+    // Fault logger — reads existing NVS fault history
+    FaultLogger::getInstance().begin();
+
+    // Health checker — wired to canManager for SDO polling
+    HealthChecker::getInstance().begin(&canManager);
+
+    // Efficiency tracker — load saved drive params from NVS
+    {
+        Preferences prefs;
+        prefs.begin("dialsettings", true);
+        float finalDrive = prefs.getFloat("finalDrive", 4.10f);
+        float wheelCirc  = prefs.getFloat("wheelCirc",  1.88f);
+        prefs.end();
+        EfficiencyTracker::getInstance().begin();
+        EfficiencyTracker::getInstance().setDriveParams(finalDrive, wheelCirc);
+        Serial.printf("[Main] EfficiencyTracker: finalDrive=%.2f wheelCirc=%.2f\n",
+                      finalDrive, wheelCirc);
+    }
 
     // Register GVRET bridge as CAN frame observer — pushes every frame to
     // connected SavvyCAN clients in real time when WiFi AP is active
@@ -367,10 +618,18 @@ void setup() {
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);
     inputManager.setOnButtonDoubleClick(onButtonDoubleClick);
+    inputManager.setOnButtonTripleClick(onButtonTripleClick);
     inputManager.setOnButtonLongPress(onButtonLongPress);
+    inputManager.setOnTouchPress(onTouchPress);
     inputManager.setOnTouchTap(onTouchTap);
 
-    uiManager.setScreen(SCREEN_DASHBOARD);
+    // Start locked if immobilizer is enabled, otherwise go straight to dashboard
+    if (immobilizer.isEnabled()) {
+        uiManager.setScreen(SCREEN_LOCK);
+    } else {
+        uiManager.setScreen(SCREEN_DASHBOARD);
+        Serial.println("[Main] Immobilizer disabled — starting at Dashboard");
+    }
     systemReady = true;
 
     #if DEBUG_SERIAL
@@ -400,10 +659,25 @@ void loop() {
 
     Hardware::update();
     inputManager.update();
+    immobilizer.update();
 
     if (wifiMode) {
         wifiManager.update();
         canManager.update();
+
+        // Handle logo upload — reload the splash screen widget without reboot
+        if (wifiManager.isLogoReloadRequested()) {
+            wifiManager.clearLogoReloadRequest();
+            Serial.println("[Main] Logo reload triggered from web UI");
+            uiManager.reloadLogo();
+            // Briefly show splash with confirmation message, then return to WiFi screen
+            lvglSuspended = false;
+            uiManager.setScreen(SCREEN_SPLASH);
+            uiManager.showFetchStatus("Logo updated!");
+            for (int i = 0; i < 150; i++) { lv_timer_handler(); delay(10); }
+            lvglSuspended = true;
+            uiManager.setScreen(SCREEN_WIFI);
+        }
 
         // Handle refetch request from web UI
         if (wifiManager.isRefetchRequested()) {
@@ -474,6 +748,46 @@ void loop() {
             tm   ? tm->getValueAsInt()               : 0,   // tmpm_c
             pot  ? pot->getValueAsInt()              : 0    // potnorm (0-1000)
         );
+    }
+
+    // Opmode change detection — auto-switch screens and log transitions
+    {
+        CANParameter* p = canManager.getParameterByName("opmode");
+        if (p) {
+            uint8_t opmode = (uint8_t)p->getValueAsInt();
+            if (opmode != lastOpmode) {
+                FaultLogger::getInstance().logOpmodeChange(opmode);
+
+                if (opmode == 3) {
+                    // Entered charge mode
+                    EfficiencyTracker::getInstance().startChargeSession();
+                    uiManager.setScreen(SCREEN_CHARGING);
+                    Serial.println("[Main] Charge mode detected — switching to charging screen");
+                } else if (lastOpmode == 3) {
+                    // Left charge mode
+                    EfficiencyTracker::getInstance().endChargeSession();
+                    uiManager.setScreen(SCREEN_DASHBOARD);
+                    Serial.println("[Main] Charge mode ended — returning to dashboard");
+                }
+                lastOpmode = opmode;
+            }
+        }
+    }
+
+    // Health checker update — drives async SDO poll sequence
+    HealthChecker::getInstance().update();
+
+    // Efficiency tracker — update once per second
+    {
+        static uint32_t lastEffUpdate = 0;
+        if (millis() - lastEffUpdate >= 1000) {
+            lastEffUpdate = millis();
+            CANParameter* pPwr = canManager.getParameterByName("pwr");
+            CANParameter* pSpd = canManager.getParameterByName("speed");
+            float powerW  = pPwr ? (float)pPwr->getValueAsInt() * 1000.0f : 0.0f;
+            int   speedRPM = pSpd ? pSpd->getValueAsInt() : 0;
+            EfficiencyTracker::getInstance().update(powerW, speedRPM);
+        }
     }
 
     // Round-robin SDO parameter polling

@@ -24,6 +24,8 @@ enum ScreenID {
     SCREEN_REGEN,
     SCREEN_WIFI,
     SCREEN_SETTINGS,
+    SCREEN_CHARGING,       // Auto-shown when opmode == 3 (charge mode)
+    SCREEN_HEALTH_CHECK,   // Pre-drive check on unlock
     SCREEN_COUNT
 };
 
@@ -42,6 +44,8 @@ public:
     // Immobilizer integration
     void setImmobilizer(Immobilizer* immob) { immobilizer = immob; }
     void updateLockScreen();  // Update lock screen PIN display
+    void showLockPinPad();    // Reveal PIN pad (called on touch tap while locked)
+    bool isLockPinPadVisible() const { return lockPinPadVisible; }
     
     // Edit mode control (for Gear, Motor, Regen screens)
     void toggleEditMode();
@@ -51,8 +55,22 @@ public:
     void updateWifiScreen(const String& ip);
     void showFetchStatus(const char* msg);
     void showWarning(const char* msg);
+    void showSuccess(const char* msg);   // green timed overlay, 2 seconds
     void resetWifiScreen();
     void updateSettings();
+    void showSystemInfo();                              // system info popup (4s)
+    void setVersionInfo(const char* dialFW, const char* uiFW);  // called from setup()
+    void reloadLogo();                                           // reload /logo.bin into live splash widget
+    void scrollSettingsMenu(int delta);   // rotate encoder on settings screen
+    int  getSettingsSelectedItem() const { return settings_selected_item; }
+    int  getSettingsMenuCount()    const { return SETTINGS_MENU_COUNT; }
+    uint32_t getSettingsArrivalTime() const { return settingsArrivalTime; }
+
+    // Screen visibility mask — one bit per ScreenID; 1=enabled, 0=hidden from dial rotation
+    // Dashboard (bit 2), WiFi (bit 10), Settings (bit 11) are always forced on.
+    void     setScreenMask(uint16_t mask) { screenMask = mask | SCREEN_MASK_FORCED; }
+    uint16_t getScreenMask()       const  { return screenMask; }
+    static UIManager* getInstance()       { return instance; }
     
 private:
     // LVGL Setup
@@ -73,6 +91,8 @@ private:
     void createRegenScreen();
     void createWiFiScreen();
     void createSettingsScreen();
+    void createChargingScreen();
+    void createHealthCheckScreen();
     
     // Screen update functions
     void updateDashboard();
@@ -83,6 +103,8 @@ private:
     void updateGear();
     void updateMotor();
     void updateRegen();
+    void updateCharging();
+    void updateHealthCheck();
     
     // Helper functions
     void clearAllScreens();
@@ -179,14 +201,64 @@ private:
     lv_obj_t* settings_can_status_label;
     lv_obj_t* settings_param_count_label;
     lv_obj_t* settings_version_label;
+    // Settings menu items
+    static const int SETTINGS_MENU_COUNT = 6;
+    lv_obj_t* settings_menu_labels[6];
+    lv_obj_t* settings_menu_indicators[6];
+    int       settings_selected_item;      // currently highlighted item
+    uint32_t  settingsArrivalTime;         // millis() when settings screen was entered
+
+    // Charging screen widgets
+    lv_obj_t* chg_title_label;
+    lv_obj_t* chg_current_label;
+    lv_obj_t* chg_voltage_label;
+    lv_obj_t* chg_soc_arc;
+    lv_meter_indicator_t* chg_soc_indicator;
+    lv_obj_t* chg_soc_label;
+    lv_obj_t* chg_eta_label;
+    lv_obj_t* chg_energy_label;
+    float     chg_voltageHistory[60];
+    int       chg_historyHead;
+    int       chg_historyCount;
+    uint32_t  chg_sessionStart;
+    float     chg_startSoc;
+
+    // Health check screen widgets
+    lv_obj_t* health_title_label;
+    lv_obj_t* health_status_label;
+    lv_obj_t* health_item_labels[8];
+    int       health_item_count;
+
+    // Dashboard efficiency widget
+    lv_obj_t* dash_efficiency_label;
+
+    // Splash screen members
+    lv_obj_t*    splash_version_label = nullptr;
+    lv_obj_t*    splash_fetch_label   = nullptr;   // updated by showFetchStatus()
+    lv_obj_t*    splash_logo_img      = nullptr;   // lv_img widget (nullptr if no logo)
+    lv_img_dsc_t splash_logo_dsc;                  // LVGL image descriptor
+    uint8_t*     splash_logo_buf      = nullptr;   // heap buffer for raw RGB565 pixels
     
     // Data
     CANDataManager* canManager;
     Immobilizer* immobilizer;  // Security system
     ScreenID currentScreen;
     uint32_t lastUpdateTime;
-    bool editMode;  // For programmable screens (Gear, Motor, Regen)
+    bool editMode;          // For programmable screens (Gear, Motor, Regen)
+    bool lockPinPadVisible; // Lock screen: false=padlock view, true=PIN entry view
     
+    // Version info — set from main.cpp via setVersionInfo()
+    char dialFWVersion[16];
+    char uiFWVersion[16];
+
+    // Screen visibility bitmask — bit N = ScreenID N is navigable
+    // Forced bits: DASHBOARD(2), WIFI(10), SETTINGS(11) always on
+    static constexpr uint16_t SCREEN_MASK_FORCED = (1u << SCREEN_DASHBOARD) |
+                                                    (1u << SCREEN_WIFI)      |
+                                                    (1u << SCREEN_SETTINGS);
+    static constexpr uint16_t SCREEN_MASK_DEFAULT = 0xFFFF;  // all on by default
+    uint16_t screenMask = SCREEN_MASK_DEFAULT;
+
     // Static instance for callbacks
     static UIManager* instance;
 };

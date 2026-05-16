@@ -1,0 +1,1068 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>ZombieVerter Settings</title>
+<link href="style.css" rel="stylesheet" type="text/css" />
+<script src="inverter.js" type="text/javascript"></script>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#4CAF50">
+</head>
+
+<body onload="settingsInit()">
+<div id="content">
+
+  <div id="navbar">
+    <div id="logo">
+      <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%23307533'/%3E%3Ctext x='50' y='67' font-size='52' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" alt="ZV">
+    </div>
+    <a class="tablink" href="/index.html">
+      <img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAeklEQVRIS2NkGGDAOM D6GQkuYGRkyiYkJCRkYGBgYHAwMDg4OBgZGRkJBgYGBgYGBgcGBgcGBgYMDg4GBgYGDg4GBgYGA4O DgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBg==">
+      <p class="navbar-text">PARAMETERS</p>
+    </a>
+    <a class="tablink" href="/can.html" target="_blank">
+      <img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAANdJREFUSIntlbEKwjAQhr+oeaAOPoILOGmHUnTqQ/Qubl30CfQRfAFfwME3cBRBKC4KgmKhkEM6lNA0NrG5wV2W/8Llu0sChPTWBQqggFO4KzfRK/AGNEBFJqsJuAMX4CobRJ+BHqiABbDOFWwB1NImQCW1y2wBrIGrWzk3oDcDrNPMoiWAFXACVqzSbZR0TGHqLVMHLCDthVgLbQpPQA+ewN7pAFwt0vAFPAFQIwVqxPqU/L7YAAAAABJRU5ErkJggg==">
+      <p class="navbar-text">CAN MONITOR</p>
+    </a>
+    <a class="tablink" href="/triplog.html" target="_blank">
+      <img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' width='24' height='24'%3E%3Cpath d='M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 7 1.4z'/%3E%3C/svg%3E">
+      <p class="navbar-text">TRIP LOG</p>
+    </a>
+    <a class="tablink" href="/faults.html" target="_blank">
+      <img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' width='24' height='24'%3E%3Cpath d='M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z'/%3E%3C/svg%3E">
+      <p class="navbar-text">FAULT LOG</p>
+    </a>
+    <a class="tablink" href="/settings.html" style="background:rgba(0,0,0,0.15);">
+      <img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' width='24' height='24'%3E%3Cpath d='M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.02 7.02 0 0 0-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.37 1.04.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z'/%3E%3C/svg%3E">
+      <p class="navbar-text">SETTINGS</p>
+    </a>
+  </div>
+
+  <div id="content-wrapper">
+    <div id="content-wrapper-inner">
+      <div class="main-content" style="padding:20px; overflow-y:auto;">
+
+        <!-- Status bar -->
+        <div id="statusBar" style="display:none; padding:8px 14px; border-radius:4px; margin-bottom:16px; font-weight:bold;" ></div>
+
+        <!-- Save reminder -->
+        <div id="saveReminder" style="display:none; background:#fff3cd; border:1px solid #ffc107; border-radius:4px; padding:10px 14px; margin-bottom:16px;">
+          ⚠ Unsaved changes — click <strong>Save to VCU Flash</strong> below to persist across power cycles.
+        </div>
+
+        <h2 style="margin-bottom:4px;">Settings</h2>
+        <p style="color:#666; margin-bottom:20px; font-size:11pt;">
+          Changes are sent to the VCU immediately via SDO. Click <strong>Save to VCU Flash</strong> to persist them across power cycles.
+          Live values shown in grey are read from the VCU on page load.
+        </p>
+
+        <!-- ── SAFETY LIMITS ───────────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>Safety Limits</h3>
+          <table class="settings-table">
+            <thead><tr><th>Parameter</th><th>Current</th><th>New Value</th><th>Unit</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr data-param="idcmax"  data-min="0"    data-max="1000">
+                <td>idcmax</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0" max="1000" step="1" placeholder="e.g. 400"></td>
+                <td>A</td>
+                <td>Max DC current (regen/charge)</td>
+              </tr>
+              <tr data-param="idcmin"  data-min="-1000" data-max="0">
+                <td>idcmin</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="-1000" max="0" step="1" placeholder="e.g. -400"></td>
+                <td>A</td>
+                <td>Max DC current (drive/discharge, negative)</td>
+              </tr>
+              <tr data-param="udcmin"  data-min="0"    data-max="1000">
+                <td>udcmin</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0" max="1000" step="1" placeholder="e.g. 280"></td>
+                <td>V</td>
+                <td>Minimum pack voltage (derate point)</td>
+              </tr>
+              <tr data-param="udclim"  data-min="0"    data-max="1000">
+                <td>udclim</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0" max="1000" step="1" placeholder="e.g. 420"></td>
+                <td>V</td>
+                <td>Maximum pack voltage (derate point)</td>
+              </tr>
+              <tr data-param="tmphsmax" data-min="50" data-max="150">
+                <td>tmphsmax</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="50" max="150" step="1" placeholder="e.g. 85"></td>
+                <td>°C</td>
+                <td>Inverter heatsink temperature derate</td>
+              </tr>
+              <tr data-param="tmpmmax" data-min="70" data-max="300">
+                <td>tmpmmax</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="70" max="300" step="1" placeholder="e.g. 120"></td>
+                <td>°C</td>
+                <td>Motor temperature derate</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ── THROTTLE ────────────────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>Throttle &amp; Response</h3>
+          <table class="settings-table">
+            <thead><tr><th>Parameter</th><th>Current</th><th>New Value</th><th>Unit</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr data-param="throtmax" data-min="0" data-max="100">
+                <td>throtmax</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0" max="100" step="1" placeholder="e.g. 100"></td>
+                <td>%</td>
+                <td>Maximum throttle request in forward</td>
+              </tr>
+              <tr data-param="throtramp" data-min="1" data-max="100">
+                <td>throtramp</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="1" max="100" step="0.1" placeholder="e.g. 10"></td>
+                <td>%/10ms</td>
+                <td>Throttle ramp rate — lower = softer response</td>
+              </tr>
+              <tr data-param="revlim" data-min="0" data-max="20000">
+                <td>revlim</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0" max="20000" step="100" placeholder="e.g. 6000"></td>
+                <td>rpm</td>
+                <td>Motor RPM limit</td>
+              </tr>
+              <tr data-param="regenmax" data-min="-35" data-max="0">
+                <td>regenmax</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="-35" max="0" step="1" placeholder="e.g. -10"></td>
+                <td>%</td>
+                <td>Maximum regen (negative, lift-off)</td>
+              </tr>
+              <tr data-param="regenBrake" data-min="-35" data-max="0">
+                <td>regenBrake</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="-35" max="0" step="1" placeholder="e.g. -15"></td>
+                <td>%</td>
+                <td>Brake pedal regen request</td>
+              </tr>
+              <tr data-param="regenrpm" data-min="100" data-max="10000">
+                <td>regenrpm</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="100" max="10000" step="50" placeholder="e.g. 1500"></td>
+                <td>rpm</td>
+                <td>RPM at which regenmax is fully applied</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ── SPLASH LOGO ─────────────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>Splash Screen Logo</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            Upload a PNG image to display full-screen on startup. The image will be scaled to 240&times;240 pixels.
+            A dark overlay at the bottom shows the firmware version and fetch status over the image.
+          </p>
+
+          <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+
+            <!-- Preview circle -->
+            <div style="flex-shrink:0;">
+              <div id="logoPreviewWrap" style="width:160px; height:160px; border-radius:50%; background:#111;
+                   border:2px solid #4CAF50; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+                <img id="logoPreview" style="width:160px; height:160px; object-fit:cover; display:none;">
+                <span id="logoPreviewPlaceholder" style="color:#555; font-size:10pt; text-align:center; padding:10px;">
+                  No logo<br>uploaded
+                </span>
+              </div>
+              <p style="font-size:9pt; color:#888; text-align:center; margin-top:6px;">Preview (approx)</p>
+            </div>
+
+            <!-- Controls -->
+            <div style="flex:1; min-width:200px;">
+              <div style="margin-bottom:12px;">
+                <label style="display:block; font-weight:600; margin-bottom:6px;">Select PNG file</label>
+                <input type="file" id="logoFile" accept="image/png"
+                       onchange="previewLogo(this)"
+                       style="font-size:10pt;">
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button onclick="uploadLogo()" id="btnLogoUpload" disabled>
+                  <img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z'/%3E%3C/svg%3E">
+                  Upload Logo
+                </button>
+                <button onclick="deleteLogo()" id="btnLogoDelete" style="border-color:#f44336; color:#f44336;">
+                  Remove Logo
+                </button>
+              </div>
+              <!-- Progress bar — shown during upload and decode -->
+              <div id="logoProgressWrap" style="display:none; margin-top:10px;">
+                <div style="background:#222; border-radius:4px; height:16px; overflow:hidden;">
+                  <div id="logoProgressBar" style="height:100%; width:0%; background:#4CAF50; transition:width 0.2s;"></div>
+                </div>
+                <div id="logoProgressText" style="font-size:9pt; color:#aaa; margin-top:4px;"></div>
+              </div>
+              <p style="color:#888; font-size:9pt; margin-top:8px;">
+                Logo will appear on the splash screen at next boot.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── SCREEN VISIBILITY ──────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>Dial Screen Visibility</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            Choose which screens appear when rotating the dial. Dashboard, WiFi and Settings are always shown.
+          </p>
+          <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-bottom:14px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_dashboard" disabled checked style="width:16px;height:16px;">
+              <span>Dashboard</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_power" style="width:16px;height:16px;">
+              <span>Power</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_temperature" style="width:16px;height:16px;">
+              <span>Temperature</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_battery" style="width:16px;height:16px;">
+              <span>Battery</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_bms" style="width:16px;height:16px;">
+              <span>BMS (Cell Voltages)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_gear" style="width:16px;height:16px;">
+              <span>Gear</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_motor" style="width:16px;height:16px;">
+              <span>Motor Select</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_regen" style="width:16px;height:16px;">
+              <span>Regen</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_wifi" disabled checked style="width:16px;height:16px;">
+              <span>WiFi</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_settings" disabled checked style="width:16px;height:16px;">
+              <span>Settings</span>
+            </label>
+          </div>
+          <button onclick="saveScreenSettings()" style="margin-right:8px;">
+            Save Screen Settings
+          </button>
+          <span id="screenSettingsStatus" style="font-size:9pt; color:#aaa;"></span>
+        </div>
+
+        <!-- ── IMMOBILIZER ─────────────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>Immobilizer</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            When enabled, the dial boots to a PIN lock screen and sends a DriveInhibit command to the VCU until unlocked.
+            Disable only if you do not want PIN protection (e.g. during bench testing).
+          </p>
+          <label style="display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="immobEnabled" style="width:18px;height:18px;">
+            <span style="font-weight:600;">Enable Immobilizer (PIN lock on boot)</span>
+          </label>
+          <div id="immobWarning" style="display:none;background:#332200;border:1px solid #ff9800;
+               border-radius:4px;padding:8px 12px;font-size:9pt;color:#ff9800;margin-bottom:10px;">
+            ⚠ Immobilizer disabled — the dial will boot directly to the Dashboard with no PIN required.
+            The VCU DriveInhibit parameter will not be set.
+          </div>
+
+          <!-- CAN parameter IDs -->
+          <div style="margin-top:14px; margin-bottom:14px;">
+            <label style="font-weight:600; display:block; margin-bottom:8px;">VCU CAN Parameter IDs</label>
+            <p style="color:#666; font-size:9pt; margin-bottom:10px;">
+              These control which VCU parameters the immobilizer writes and reads. Only change if your VCU firmware uses different IDs.
+            </p>
+            <div style="display:flex; gap:16px; flex-wrap:wrap;">
+              <div>
+                <label style="display:block; font-size:9pt; color:#aaa; margin-bottom:4px;">DriveInhibit write param ID (default 156)</label>
+                <input type="number" id="immobWriteId" min="0" max="65535" step="1" placeholder="156"
+                       style="width:120px; font-size:10pt;">
+              </div>
+              <div>
+                <label style="display:block; font-size:9pt; color:#aaa; margin-bottom:4px;">DriveInhibited read spot ID (default 2124)</label>
+                <input type="number" id="immobReadId" min="0" max="65535" step="1" placeholder="2124"
+                       style="width:120px; font-size:10pt;">
+              </div>
+            </div>
+          </div>
+
+          <button onclick="saveImmobSetting()">
+            Save Immobilizer Setting
+          </button>
+          <span id="immobSettingStatus" style="font-size:9pt; color:#aaa; margin-left:8px;"></span>
+        </div>
+
+        <!-- ── HEALTH CHECK ─────────────────────────────────────────── -->
+        <div class="settings-section" id="healthSection">
+          <h3>Pre-Drive Health Check</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            Thresholds are checked on every unlock. Changes are stored locally on the M5Dial and do not affect the VCU.
+          </p>
+
+          <!-- Fail behaviour -->
+          <div style="margin-bottom:16px;">
+            <label style="font-weight:600; display:block; margin-bottom:8px;">Fail Behaviour</label>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+                <input type="radio" name="failBehav" value="0" style="margin-top:3px;">
+                <span><strong>A &mdash; Advisory:</strong> always proceeds after 5s regardless of result</span>
+              </label>
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+                <input type="radio" name="failBehav" value="1" style="margin-top:3px;">
+                <span><strong>B &mdash; Severity (recommended):</strong> warnings auto-advance, failures require button press</span>
+              </label>
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+                <input type="radio" name="failBehav" value="2" style="margin-top:3px;">
+                <span><strong>C &mdash; Acknowledge:</strong> any warn or fail requires a button press to continue</span>
+              </label>
+              <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;">
+                <input type="radio" name="failBehav" value="3" style="margin-top:3px;">
+                <span><strong>D &mdash; Block:</strong> warnings require button press; failures re-lock the vehicle</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Threshold table -->
+          <table class="settings-table">
+            <thead><tr><th>Check</th><th>Current</th><th>Warn threshold</th><th>Fail threshold</th><th>Unit</th></tr></thead>
+            <tbody>
+              <tr data-health="cellDelta">
+                <td>Cell Delta (max&minus;min)</td>
+                <td class="current-val" id="hv-cellDelta">&mdash;</td>
+                <td><input type="number" id="hi-cdWarn" min="0" max="500" step="1" placeholder="80"></td>
+                <td><input type="number" id="hi-cdFail" min="0" max="500" step="1" placeholder="150"></td>
+                <td>mV</td>
+              </tr>
+              <tr data-health="minCell">
+                <td>Min Cell Voltage</td>
+                <td class="current-val" id="hv-minCell">&mdash;</td>
+                <td><input type="number" id="hi-mcWarn" min="2" max="4.5" step="0.05" placeholder="3.00"></td>
+                <td><input type="number" id="hi-mcFail" min="2" max="4.5" step="0.05" placeholder="2.80"></td>
+                <td>V</td>
+              </tr>
+              <tr data-health="motorTemp">
+                <td>Motor Temperature</td>
+                <td class="current-val" id="hv-motorTemp">&mdash;</td>
+                <td><input type="number" id="hi-mtWarn" min="0" max="200" step="1" placeholder="70"></td>
+                <td><input type="number" id="hi-mtFail" min="0" max="200" step="1" placeholder="85"></td>
+                <td>&deg;C</td>
+              </tr>
+              <tr data-health="invTemp">
+                <td>Inverter Temperature</td>
+                <td class="current-val" id="hv-invTemp">&mdash;</td>
+                <td><input type="number" id="hi-itWarn" min="0" max="200" step="1" placeholder="65"></td>
+                <td><input type="number" id="hi-itFail" min="0" max="200" step="1" placeholder="80"></td>
+                <td>&deg;C</td>
+              </tr>
+              <tr data-health="packVolt">
+                <td>Pack Voltage</td>
+                <td class="current-val" id="hv-packVolt">&mdash;</td>
+                <td><input type="number" id="hi-pvWarn" min="0" max="1000" step="1" placeholder="200"></td>
+                <td><input type="number" id="hi-pvFail" min="0" max="1000" step="1" placeholder="100"></td>
+                <td>V (fail if &lt; threshold)</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="margin-top:12px; display:flex; gap:10px;">
+            <button onclick="saveHealthSettings()" id="btnHealthSave">
+              <img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z'/%3E%3C/svg%3E">
+              Save Health Settings
+            </button>
+            <button onclick="resetHealthDefaults()" style="border-color:#888;">
+              Reset Defaults
+            </button>
+          </div>
+        </div>
+
+        <!-- ── ACTION BUTTONS ─────────────────────────────────────────── -->
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; padding-bottom:40px;">
+          <button onclick="applyAll()" id="btnApply">
+            <img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E">
+            Apply Changes
+          </button>
+          <button onclick="saveToFlash()" id="btnSave">
+            <img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z'/%3E%3C/svg%3E">
+            Save to VCU Flash
+          </button>
+          <button onclick="loadCurrentValues()" style="border-color:#888;">
+            <img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'/%3E%3C/svg%3E">
+            Refresh Values
+          </button>
+        </div>
+
+      </div><!-- main-content -->
+    </div>
+  </div><!-- content-wrapper -->
+</div><!-- content -->
+
+<style>
+.settings-section {
+  margin-bottom: 28px;
+}
+.settings-section h3 {
+  padding: 8px 0 10px 0;
+  border-bottom: 2px solid #4CAF50;
+  color: #222;
+}
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 11pt;
+}
+.settings-table th {
+  background: #e8f5e9;
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 2px solid #4CAF50;
+  font-size: 10pt;
+  font-weight: 600;
+}
+.settings-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  vertical-align: middle;
+}
+.settings-table tr:hover { background: #f9fff9; }
+.settings-table td:first-child {
+  font-family: monospace;
+  font-size: 10pt;
+  font-weight: bold;
+  color: #307533;
+}
+.current-val {
+  color: #999;
+  font-family: monospace;
+  font-size: 10pt;
+  min-width: 60px;
+}
+.current-val.loaded { color: #333; }
+.settings-table td:last-child { color: #666; font-size: 10pt; }
+.settings-table input[type=number] {
+  width: 90px;
+  margin: 0;
+  padding: 4px 6px;
+  border: 2px solid #ccc;
+  border-radius: 4px;
+  font-size: 10pt;
+  transition: border-color .2s;
+}
+.settings-table input[type=number]:focus { border-color: #4CAF50; outline: none; }
+.settings-table input[type=number].changed { border-color: #ff9800; background: #fff8e1; }
+.settings-table input[type=number].applied { border-color: #4CAF50; background: #e8f5e9; }
+.settings-table input[type=number].error { border-color: #f44336; background: #fff0f0; }
+#statusBar.success { background: #e8f5e9; border: 1px solid #4CAF50; color: #2e7d32; }
+#statusBar.error   { background: #fff0f0; border: 1px solid #f44336; color: #c62828; }
+#statusBar.info    { background: #e3f2fd; border: 1px solid #2196f3; color: #1565c0; }
+</style>
+
+<script>
+var pendingCount = 0;
+var appliedCount = 0;
+var params = {};
+
+function settingsInit() {
+  // Mark inputs as changed when edited
+  document.querySelectorAll('.settings-table input').forEach(input => {
+    input.addEventListener('input', function() {
+      this.classList.remove('applied', 'error');
+      if (this.value !== '') {
+        this.classList.add('changed');
+        document.getElementById('saveReminder').style.display = 'block';
+      } else {
+        this.classList.remove('changed');
+      }
+    });
+  });
+  loadCurrentValues();
+  loadHealthSettings();
+  checkLogoExists();
+}
+
+function loadCurrentValues() {
+  showStatus('Loading current values from VCU...', 'info');
+  inverter.getParamList(function(data) {
+    params = data;
+    // Populate current value cells for VCU params
+    document.querySelectorAll('[data-param]').forEach(row => {
+      var name = row.dataset.param;
+      var cell = row.querySelector('.current-val');
+      if (data[name] !== undefined) {
+        var val = data[name].value;
+        cell.textContent = val + ' ' + (data[name].unit || '');
+        cell.classList.add('loaded');
+        // Pre-fill input if empty
+        var input = row.querySelector('input');
+        if (input && input.value === '') {
+          input.placeholder = val;
+        }
+      }
+    });
+    // Load local M5Dial settings
+    loadLocalSettings();
+    showStatus('Values loaded — edit and click Apply Changes.', 'success');
+    setTimeout(() => { document.getElementById('statusBar').style.display = 'none'; }, 3000);
+  });
+}
+
+function loadLocalSettings() {
+  // Fetch from /settings endpoint (GET returns JSON of local M5Dial config)
+  fetch('/dial-settings')
+    .then(r => r.json())
+    .then(cfg => {
+      document.querySelectorAll('[data-local]').forEach(row => {
+        var key = row.dataset.local;
+        var cell = row.querySelector('.current-val');
+        if (cfg[key] !== undefined) {
+          cell.textContent = cfg[key];
+          cell.classList.add('loaded');
+          var input = row.querySelector('input');
+          if (input && input.value === '') input.placeholder = cfg[key];
+        }
+      });
+    })
+    .catch(() => {
+      // /dial-settings endpoint not yet implemented — show defaults
+      var defaults = { finalDrive: '4.10', wheelCirc: '1.88' };
+      document.querySelectorAll('[data-local]').forEach(row => {
+        var cell = row.querySelector('.current-val');
+        cell.textContent = defaults[row.dataset.local] || '—';
+        var input = row.querySelector('input');
+        if (input && input.value === '') input.placeholder = defaults[row.dataset.local] || '';
+      });
+    });
+}
+
+function applyAll() {
+  var rows = document.querySelectorAll('[data-param]');
+  var toApply = [];
+  rows.forEach(row => {
+    var input = row.querySelector('input');
+    if (input && input.value !== '') {
+      toApply.push({ row: row, name: row.dataset.param, value: input.value,
+                     min: parseFloat(row.dataset.min || '-999999'),
+                     max: parseFloat(row.dataset.max || '999999') });
+    }
+  });
+
+  // Local M5Dial settings
+  var localRows = document.querySelectorAll('[data-local]');
+  var localChanges = {};
+  localRows.forEach(row => {
+    var input = row.querySelector('input');
+    if (input && input.value !== '') {
+      localChanges[row.dataset.local] = parseFloat(input.value);
+    }
+  });
+
+  if (toApply.length === 0 && Object.keys(localChanges).length === 0) {
+    showStatus('No values entered — type a new value in the New Value column first.', 'error');
+    return;
+  }
+
+  // Validate ranges
+  var errors = [];
+  toApply.forEach(item => {
+    var v = parseFloat(item.value);
+    if (isNaN(v)) {
+      errors.push(item.name + ': not a number');
+      item.row.querySelector('input').classList.add('error');
+    } else if (v < item.min || v > item.max) {
+      errors.push(item.name + ': ' + v + ' outside range [' + item.min + ', ' + item.max + ']');
+      item.row.querySelector('input').classList.add('error');
+    }
+  });
+
+  if (errors.length) {
+    showStatus('Fix errors: ' + errors.join(' | '), 'error');
+    return;
+  }
+
+  // Send VCU params via SDO
+  pendingCount = toApply.length;
+  appliedCount = 0;
+  showStatus('Sending ' + pendingCount + ' value(s) to VCU...', 'info');
+  document.getElementById('btnApply').disabled = true;
+
+  function sendNext(idx) {
+    if (idx >= toApply.length) {
+      // Apply local settings
+      if (Object.keys(localChanges).length > 0) {
+        applyLocalSettings(localChanges);
+      }
+      document.getElementById('btnApply').disabled = false;
+      document.getElementById('saveReminder').style.display = 'block';
+      showStatus(appliedCount + ' VCU value(s) sent. Click Save to VCU Flash to persist.', 'success');
+      return;
+    }
+    var item = toApply[idx];
+    inverter.sendCmd('set ' + item.name + ' ' + item.value, function(reply) {
+      var input = item.row.querySelector('input');
+      if (reply && reply.indexOf('1') >= 0) {
+        input.classList.remove('changed', 'error');
+        input.classList.add('applied');
+        item.row.querySelector('.current-val').textContent = item.value;
+        appliedCount++;
+      } else {
+        input.classList.add('error');
+        showStatus('Error setting ' + item.name + ': ' + reply, 'error');
+      }
+      // Small delay between SDO writes to avoid flooding
+      setTimeout(() => sendNext(idx + 1), 150);
+    });
+  }
+
+  sendNext(0);
+}
+
+function applyLocalSettings(changes) {
+  fetch('/dial-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(changes)
+  }).then(r => {
+    if (r.ok) {
+      document.querySelectorAll('[data-local]').forEach(row => {
+        var key = row.dataset.local;
+        if (changes[key] !== undefined) {
+          row.querySelector('.current-val').textContent = changes[key];
+          var input = row.querySelector('input');
+          input.classList.remove('changed');
+          input.classList.add('applied');
+        }
+      });
+    }
+  }).catch(() => {
+    // Endpoint not yet implemented — silently ignore
+  });
+}
+
+function saveToFlash() {
+  showStatus('Saving to VCU flash...', 'info');
+  document.getElementById('btnSave').disabled = true;
+  inverter.sendCmd('save', function(reply) {
+    document.getElementById('btnSave').disabled = false;
+    if (reply && reply.indexOf('1') >= 0) {
+      document.getElementById('saveReminder').style.display = 'none';
+      showStatus('✓ Saved to VCU flash. Changes will persist after power cycle.', 'success');
+    } else {
+      showStatus('Save failed: ' + reply, 'error');
+    }
+  });
+}
+
+function showStatus(msg, type) {
+  var bar = document.getElementById('statusBar');
+  bar.textContent = msg;
+  bar.className = type || 'info';
+  bar.style.display = 'block';
+}
+
+// ── Health check settings ─────────────────────────────────────────────────
+var healthDefaults = {
+  failBehav: 1,
+  cdWarn: 80,  cdFail: 150,
+  mcWarn: 3.0, mcFail: 2.8,
+  mtWarn: 70,  mtFail: 85,
+  itWarn: 65,  itFail: 80,
+  pvWarn: 200, pvFail: 100
+};
+
+function loadHealthSettings() {
+  fetch('/health-settings')
+    .then(r => r.json())
+    .then(cfg => {
+      // Set radio button
+      var radios = document.querySelectorAll('input[name="failBehav"]');
+      radios.forEach(r => { r.checked = (parseInt(r.value) === cfg.failBehav); });
+      // Set threshold inputs and current values
+      var map = {
+        cdWarn: 'hi-cdWarn', cdFail: 'hi-cdFail',
+        mcWarn: 'hi-mcWarn', mcFail: 'hi-mcFail',
+        mtWarn: 'hi-mtWarn', mtFail: 'hi-mtFail',
+        itWarn: 'hi-itWarn', itFail: 'hi-itFail',
+        pvWarn: 'hi-pvWarn', pvFail: 'hi-pvFail'
+      };
+      Object.keys(map).forEach(key => {
+        var el = document.getElementById(map[key]);
+        if (el && cfg[key] !== undefined) el.placeholder = cfg[key];
+      });
+      // Show current values in table
+      if (cfg.cdWarn !== undefined) document.getElementById('hv-cellDelta').textContent = 'warn>' + cfg.cdWarn + ' fail>' + cfg.cdFail + ' mV';
+      if (cfg.mcWarn !== undefined) document.getElementById('hv-minCell').textContent   = 'warn<' + cfg.mcWarn + ' fail<' + cfg.mcFail + ' V';
+      if (cfg.mtWarn !== undefined) document.getElementById('hv-motorTemp').textContent = 'warn>' + cfg.mtWarn + ' fail>' + cfg.mtFail + '°C';
+      if (cfg.itWarn !== undefined) document.getElementById('hv-invTemp').textContent   = 'warn>' + cfg.itWarn + ' fail>' + cfg.itFail + '°C';
+      if (cfg.pvWarn !== undefined) document.getElementById('hv-packVolt').textContent  = 'warn<' + cfg.pvWarn + ' fail<' + cfg.pvFail + ' V';
+    })
+    .catch(() => {
+      // Endpoint not yet available — show defaults
+      var radios = document.querySelectorAll('input[name="failBehav"]');
+      radios.forEach(r => { r.checked = (parseInt(r.value) === healthDefaults.failBehav); });
+    });
+}
+
+function saveHealthSettings() {
+  var behav = 3;
+  document.querySelectorAll('input[name="failBehav"]').forEach(r => { if (r.checked) behav = parseInt(r.value); });
+
+  var getVal = (id, def) => {
+    var el = document.getElementById(id);
+    var v = el && el.value !== '' ? parseFloat(el.value) : parseFloat(el.placeholder || def);
+    return isNaN(v) ? def : v;
+  };
+
+  var payload = {
+    failBehav: behav,
+    cdWarn: getVal('hi-cdWarn', healthDefaults.cdWarn),
+    cdFail: getVal('hi-cdFail', healthDefaults.cdFail),
+    mcWarn: getVal('hi-mcWarn', healthDefaults.mcWarn),
+    mcFail: getVal('hi-mcFail', healthDefaults.mcFail),
+    mtWarn: getVal('hi-mtWarn', healthDefaults.mtWarn),
+    mtFail: getVal('hi-mtFail', healthDefaults.mtFail),
+    itWarn: getVal('hi-itWarn', healthDefaults.itWarn),
+    itFail: getVal('hi-itFail', healthDefaults.itFail),
+    pvWarn: getVal('hi-pvWarn', healthDefaults.pvWarn),
+    pvFail: getVal('hi-pvFail', healthDefaults.pvFail)
+  };
+
+  document.getElementById('btnHealthSave').disabled = true;
+  fetch('/health-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(r => {
+    document.getElementById('btnHealthSave').disabled = false;
+    if (r.ok) {
+      showStatus('✓ Health check settings saved to M5Dial.', 'success');
+      loadHealthSettings();  // refresh displayed values
+    } else {
+      showStatus('Save failed — check M5Dial connection.', 'error');
+    }
+  }).catch(() => {
+    document.getElementById('btnHealthSave').disabled = false;
+    showStatus('Save failed — check M5Dial connection.', 'error');
+  });
+}
+
+function resetHealthDefaults() {
+  if (!confirm('Reset all health check thresholds to factory defaults?')) return;
+  fetch('/health-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(healthDefaults)
+  }).then(r => {
+    if (r.ok) {
+      showStatus('✓ Health check thresholds reset to defaults.', 'success');
+      loadHealthSettings();
+    }
+  });
+}
+
+// ── Logo upload ───────────────────────────────────────────────────────────
+function previewLogo(input) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = document.getElementById('logoPreview');
+    var ph  = document.getElementById('logoPreviewPlaceholder');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    ph.style.display  = 'none';
+    document.getElementById('btnLogoUpload').disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+function uploadLogo() {
+  console.log('[LOGO] uploadLogo() called');
+  var file = document.getElementById('logoFile').files[0];
+  if (!file) { console.log('[LOGO] No file selected'); return; }
+  console.log('[LOGO] File:', file.name, file.type, file.size, 'bytes');
+  var isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+  if (!isPng) { showStatus('Please select a PNG file.', 'error'); return; }
+  if (file.size > 600000) { showStatus('File too large — please use a PNG under 600KB.', 'error'); return; }
+
+  var btn    = document.getElementById('btnLogoUpload');
+  var delBtn = document.getElementById('btnLogoDelete');
+  btn.disabled    = true;
+  delBtn.disabled = true;
+
+  var progWrap = document.getElementById('logoProgressWrap');
+  var progBar  = document.getElementById('logoProgressBar');
+  var progTxt  = document.getElementById('logoProgressText');
+  progWrap.style.display = 'block';
+  progBar.style.width = '0%';
+  progBar.style.background = '#4CAF50';
+  progTxt.textContent = 'Uploading...';
+
+  var fd = new FormData();
+  fd.append('logo', file, file.name);
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', '/upload-logo', true);
+
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) {
+      var pct = Math.round(e.loaded / e.total * 100);
+      progBar.style.width = pct + '%';
+      progTxt.textContent = 'Uploading... ' + pct + '%';
+    }
+  };
+
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      progBar.style.width = '100%';
+      progTxt.textContent = 'Upload complete. Decoding PNG on dial...';
+      // Poll /logo-status until decode finishes (max 30s)
+      var polls = 0;
+      var maxPolls = 60;
+      var pollTimer = setInterval(function() {
+        polls++;
+        fetch('/logo-status')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.state === 'ok') {
+              clearInterval(pollTimer);
+              progBar.style.background = '#4CAF50';
+              progTxt.textContent = '✓ Logo saved and rendered on dial.';
+              document.getElementById('logoPreviewPlaceholder').textContent = 'Logo uploaded';
+              document.getElementById('logoPreviewPlaceholder').style.color = '#4CAF50';
+              showStatus('✓ Logo uploaded. Will appear on splash screen at next boot.', 'success');
+              btn.disabled    = false;
+              delBtn.disabled = false;
+              setTimeout(function() { progWrap.style.display = 'none'; }, 4000);
+            } else if (d.state === 'failed') {
+              clearInterval(pollTimer);
+              progBar.style.background = '#f44336';
+              progTxt.textContent = '✗ Decode failed — try a different PNG.';
+              showStatus('Decode failed — PNG may be corrupt or too complex.', 'error');
+              btn.disabled    = false;
+              delBtn.disabled = false;
+            } else if (polls >= maxPolls) {
+              clearInterval(pollTimer);
+              progBar.style.background = '#ff9800';
+              progTxt.textContent = 'Timeout waiting for decode.';
+              showStatus('Decode timed out — check M5Dial serial output.', 'error');
+              btn.disabled    = false;
+              delBtn.disabled = false;
+            }
+          })
+          .catch(function() {
+            if (polls >= maxPolls) {
+              clearInterval(pollTimer);
+              btn.disabled    = false;
+              delBtn.disabled = false;
+            }
+          });
+      }, 500);
+    } else {
+      progBar.style.background = '#f44336';
+      progTxt.textContent = '✗ Upload failed (HTTP ' + xhr.status + ')';
+      showStatus('Upload failed — HTTP ' + xhr.status, 'error');
+      btn.disabled    = false;
+      delBtn.disabled = false;
+    }
+  };
+
+  xhr.onerror = function() {
+    progBar.style.background = '#f44336';
+    progTxt.textContent = '✗ Connection error';
+    showStatus('Upload failed — check M5Dial connection.', 'error');
+    btn.disabled    = false;
+    delBtn.disabled = false;
+  };
+
+  xhr.send(fd);
+}
+
+function deleteLogo() {
+  if (!confirm('Remove the splash screen logo?')) return;
+  var btn = document.getElementById('btnLogoDelete');
+  btn.disabled = true;
+  showStatus('Removing logo...', 'info');
+  fetch('/delete-logo', { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      btn.disabled = false;
+      if (data.ok) {
+        document.getElementById('logoPreview').style.display = 'none';
+        document.getElementById('logoPreviewPlaceholder').style.display = 'block';
+        document.getElementById('logoPreviewPlaceholder').textContent = 'No logo\nuploaded';
+        document.getElementById('logoPreviewPlaceholder').style.color = '#555';
+        document.getElementById('logoFile').value = '';
+        document.getElementById('btnLogoUpload').disabled = true;
+        showStatus('✓ Logo removed. Text-only splash will show on next boot.', 'success');
+      } else {
+        showStatus('No logo found to remove.', 'info');
+      }
+    })
+    .catch(function() {
+      btn.disabled = false;
+      showStatus('Delete failed — check M5Dial connection.', 'error');
+    });
+}
+
+// ── Screen visibility and immobilizer settings ──────────────────────────────
+
+// ScreenID enum values matching UIManager.h
+var SCREEN_IDS = {
+  scr_dashboard:   2,
+  scr_power:       3,
+  scr_temperature: 4,
+  scr_battery:     5,
+  scr_bms:         6,
+  scr_gear:        7,
+  scr_motor:       8,
+  scr_regen:       9,
+  scr_wifi:        10,
+  scr_settings:    11
+};
+
+function loadScreenAndImmobSettings() {
+  fetch('/dial-settings')
+    .then(function(r) { return r.json(); })
+    .then(function(cfg) {
+      // Apply screen mask checkboxes
+      if (cfg.screenMask !== undefined) {
+        var mask = cfg.screenMask;
+        Object.keys(SCREEN_IDS).forEach(function(id) {
+          var cb = document.getElementById(id);
+          if (cb && !cb.disabled) {
+            cb.checked = !!(mask & (1 << SCREEN_IDS[id]));
+          }
+        });
+      }
+      // Apply immob toggle and CAN param IDs
+      if (cfg.immobEnabled !== undefined) {
+        var cb = document.getElementById('immobEnabled');
+        if (cb) {
+          cb.checked = cfg.immobEnabled;
+          document.getElementById('immobWarning').style.display = cfg.immobEnabled ? 'none' : 'block';
+        }
+      }
+      if (cfg.immobWriteId !== undefined) {
+        var el = document.getElementById('immobWriteId');
+        if (el) el.placeholder = cfg.immobWriteId;
+      }
+      if (cfg.immobReadId !== undefined) {
+        var el = document.getElementById('immobReadId');
+        if (el) el.placeholder = cfg.immobReadId;
+      }
+    })
+    .catch(function() {});
+}
+
+function buildScreenMask() {
+  var mask = 0;
+  Object.keys(SCREEN_IDS).forEach(function(id) {
+    var cb = document.getElementById(id);
+    if (cb && cb.checked) mask |= (1 << SCREEN_IDS[id]);
+  });
+  return mask;
+}
+
+function saveScreenSettings() {
+  var mask = buildScreenMask();
+  var st = document.getElementById('screenSettingsStatus');
+  st.textContent = 'Saving...';
+  st.style.color = '#aaa';
+  fetch('/dial-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ screenMask: mask })
+  })
+  .then(function(r) {
+    if (r.ok) {
+      st.textContent = '✓ Saved';
+      st.style.color = '#4CAF50';
+      showStatus('Screen settings saved. Changes take effect immediately on the dial.', 'success');
+    } else {
+      st.textContent = '✗ Failed';
+      st.style.color = '#f44336';
+    }
+  })
+  .catch(function() {
+    st.textContent = '✗ Connection error';
+    st.style.color = '#f44336';
+  });
+}
+
+function saveImmobSetting() {
+  var enabled  = document.getElementById('immobEnabled').checked;
+  var writeEl  = document.getElementById('immobWriteId');
+  var readEl   = document.getElementById('immobReadId');
+  document.getElementById('immobWarning').style.display = enabled ? 'none' : 'block';
+  var st = document.getElementById('immobSettingStatus');
+  st.textContent = 'Saving...';
+  st.style.color = '#aaa';
+
+  var payload = { immobEnabled: enabled };
+  var writeVal = parseInt(writeEl.value);
+  var readVal  = parseInt(readEl.value);
+  if (!isNaN(writeVal) && writeVal >= 0 && writeVal <= 65535) payload.immobWriteId = writeVal;
+  if (!isNaN(readVal)  && readVal  >= 0 && readVal  <= 65535) payload.immobReadId  = readVal;
+
+  fetch('/dial-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) {
+    if (r.ok) {
+      // Update placeholders to reflect saved values
+      if (payload.immobWriteId !== undefined) { writeEl.value = ''; writeEl.placeholder = payload.immobWriteId; }
+      if (payload.immobReadId  !== undefined) { readEl.value  = ''; readEl.placeholder  = payload.immobReadId;  }
+      st.textContent = '✓ Saved';
+      st.style.color = '#4CAF50';
+      showStatus(enabled
+        ? '✓ Immobilizer enabled. Dial will require PIN on next boot.'
+        : '✓ Immobilizer disabled. Dial will boot directly to Dashboard.',
+        'success');
+    } else {
+      st.textContent = '✗ Failed';
+      st.style.color = '#f44336';
+    }
+  })
+  .catch(function() {
+    st.textContent = '✗ Connection error';
+    st.style.color = '#f44336';
+  });
+}
+
+// Wire immob checkbox to show/hide warning immediately
+document.addEventListener('DOMContentLoaded', function() {
+  var cb = document.getElementById('immobEnabled');
+  if (cb) {
+    cb.addEventListener('change', function() {
+      document.getElementById('immobWarning').style.display = cb.checked ? 'none' : 'block';
+    });
+  }
+  loadScreenAndImmobSettings();
+  checkLogoExists();
+});
+
+</script>
+
+</body>
+</html>

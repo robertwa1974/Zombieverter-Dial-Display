@@ -7,7 +7,7 @@
 // Static instance pointer for SDO callback
 CANDataManager* CANDataManager::instance = nullptr;
 
-void CANDataManager::onSDOResult(const SDOResult& result) {
+void CANDataManager::sdoResultCallback(const SDOResult& result) {
     if (!instance) return;
     if (!result.success) {
         #if DEBUG_CAN
@@ -34,6 +34,12 @@ void CANDataManager::onSDOResult(const SDOResult& result) {
     Serial.printf("[SDO CB] Read param %d raw=%d scaled=%d\n",
                   result.paramId, result.value, result.value / 32);
     #endif
+}
+
+// Public dispatcher — called from main's onSDOResult() after the immobilizer
+// has claimed param 156 (DriveInhibit) and spot 2124 (DriveInhibited).
+void CANDataManager::onSDOResult(const SDOResult& result) {
+    sdoResultCallback(result);
 }
 
 // ============================================================================
@@ -84,7 +90,7 @@ bool CANDataManager::init() {
 }
 
 bool CANDataManager::initSDO() {
-    if (!sdoManager.init(onSDOResult)) {
+    if (!sdoManager.init(sdoResultCallback)) {
         Serial.println("[CAN] SDOManager init failed");
         return false;
     }

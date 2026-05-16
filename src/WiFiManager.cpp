@@ -15,6 +15,12 @@
 #include "Config.h"
 #include "TripLogger.h"
 #include "GVRETServer.h"
+#include "FaultLogger.h"
+#include "EfficiencyTracker.h"
+#include "HealthChecker.h"
+#include "UIManager.h"
+#include "Immobilizer.h"
+#include "pngle.h"
 
 #include <WiFi.h>
 #include <ESPmDNS.h>
@@ -97,6 +103,100 @@ static AsyncWebServer* server = nullptr;
 static WiFiManager* instance = nullptr;
 
 // ---------------------------------------------------------------------------
+// Logo upload — struct, statics and pngle callbacks defined here so they are
+// visible to the inline lambda inside startServer()
+// ---------------------------------------------------------------------------
+struct LogoUploadCtx {
+    pngle_t*  pngle      = nullptr;
+    File      file;
+    uint16_t  srcW       = 0;
+    uint16_t  srcH       = 0;
+    // Destination rectangle within 240x240 (letterboxed)
+    uint16_t  dstX0      = 0;   // left edge of image in output
+    uint16_t  dstY0      = 0;   // top edge of image in output
+    uint16_t  dstW       = 0;   // scaled width
+    uint16_t  dstH       = 0;   // scaled height
+    uint16_t  rowBuf[240];
+    uint32_t  lastY      = 0xFFFF;
+    bool      error      = false;
+    uint32_t  pixCount   = 0;
+};
+
+static LogoUploadCtx* s_logoCtx    = nullptr;
+static bool           s_logoUploadOk = false;
+
+static void logo_on_init(pngle_t* pngle, uint32_t w, uint32_t h) {
+    if (!s_logoCtx) return;
+    s_logoCtx->srcW = (uint16_t)w;
+    s_logoCtx->srcH = (uint16_t)h;
+
+    // Letterbox: scale to fit within 240x240 maintaining aspect ratio
+    float scaleW = 240.0f / w;
+    float scaleH = 240.0f / h;
+    float scale  = (scaleW < scaleH) ? scaleW : scaleH;  // fit, don't crop
+    s_logoCtx->dstW  = (uint16_t)(w * scale);
+    s_logoCtx->dstH  = (uint16_t)(h * scale);
+    s_logoCtx->dstX0 = (240 - s_logoCtx->dstW) / 2;
+    s_logoCtx->dstY0 = (240 - s_logoCtx->dstH) / 2;
+
+    Serial.printf("[LOGO] %dx%d -> %dx%d at (%d,%d) letterboxed\n",
+        w, h, s_logoCtx->dstW, s_logoCtx->dstH,
+        s_logoCtx->dstX0, s_logoCtx->dstY0);
+
+    s_logoCtx->file = SPIFFS.open("/logo.tmp", "w");
+    if (!s_logoCtx->file) {
+        Serial.println("[LOGO] SPIFFS open failed");
+        s_logoCtx->error = true;
+        return;
+    }
+    uint16_t fw = 240, fh = 240;
+    s_logoCtx->file.write((uint8_t*)&fw, 2);
+    s_logoCtx->file.write((uint8_t*)&fh, 2);
+
+    // Pre-fill with black
+    memset(s_logoCtx->rowBuf, 0, sizeof(s_logoCtx->rowBuf));
+    for (int row = 0; row < 240; row++) {
+        s_logoCtx->file.write((uint8_t*)s_logoCtx->rowBuf, 480);
+        if (row % 30 == 0) yield();
+    }
+    Serial.println("[LOGO] Pre-fill done, starting decode");
+}
+
+static void logo_flush_row(uint32_t y) {
+    // Seek to this row's position and write it
+    if (!s_logoCtx || !s_logoCtx->file) return;
+    uint32_t offset = 4 + (uint32_t)y * 240 * 2;
+    s_logoCtx->file.seek(offset);
+    s_logoCtx->file.write((uint8_t*)s_logoCtx->rowBuf, 480);
+    memset(s_logoCtx->rowBuf, 0, 480);  // clear for next row
+}
+
+static void logo_on_draw(pngle_t* pngle, uint32_t x, uint32_t y,
+                          uint32_t w, uint32_t h,
+                          const uint8_t rgba[4]) {
+    if (!s_logoCtx || s_logoCtx->error || !s_logoCtx->file) return;
+
+    // Map source pixel to destination using letterbox rect
+    uint32_t dstX = s_logoCtx->dstX0 + (uint32_t)x * s_logoCtx->dstW / s_logoCtx->srcW;
+    uint32_t dstY = s_logoCtx->dstY0 + (uint32_t)y * s_logoCtx->dstH / s_logoCtx->srcH;
+    if (dstX >= 240 || dstY >= 240) return;
+
+    // Flush previous row when we move to a new destination row
+    if (dstY != s_logoCtx->lastY && s_logoCtx->lastY != 0xFFFF) {
+        logo_flush_row(s_logoCtx->lastY);
+    }
+    s_logoCtx->lastY = dstY;
+
+    // Convert RGBA8888 → RGB565 byte-swapped for LVGL
+    uint8_t r = rgba[0], g = rgba[1], b = rgba[2];
+    uint16_t rgb565  = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+    uint16_t swapped = (rgb565 >> 8) | (rgb565 << 8);
+    s_logoCtx->rowBuf[dstX] = swapped;
+    s_logoCtx->pixCount++;
+    if (s_logoCtx->pixCount % 10000 == 0) yield();
+}
+
+// ---------------------------------------------------------------------------
 // Constructor
 // ---------------------------------------------------------------------------
 WiFiManager::WiFiManager()
@@ -163,8 +263,59 @@ void WiFiManager::stopAP() {
 // update — no-op: ESPAsyncWebServer handles everything internally
 // ---------------------------------------------------------------------------
 void WiFiManager::update() {
-    // ESPAsyncWebServer is fully non-blocking — handle GVRET TCP clients here
     if (active) GVRETServer::getInstance().update();
+
+    // Deferred PNG decode — runs on loopTask so async_tcp watchdog is never starved
+    if (pngPending && pngBuffer && pngBufLen > 0) {
+        pngPending = false;
+        Serial.printf("[LOGO] Decoding %u bytes on loopTask...\n", (unsigned)pngBufLen);
+
+        s_logoCtx = new LogoUploadCtx();
+        s_logoCtx->pngle = pngle_new();
+        bool ok = false;
+
+        if (s_logoCtx->pngle) {
+            pngle_set_init_callback(s_logoCtx->pngle, logo_on_init);
+            pngle_set_draw_callback(s_logoCtx->pngle, logo_on_draw);
+
+            const size_t CHUNK = 2048;
+            bool error = false;
+            for (size_t off = 0; off < pngBufLen && !error; off += CHUNK) {
+                size_t n = min(CHUNK, pngBufLen - off);
+                if (pngle_feed(s_logoCtx->pngle, pngBuffer + off, n) < 0) {
+                    Serial.printf("[LOGO] pngle error: %s\n", pngle_error(s_logoCtx->pngle));
+                    s_logoCtx->error = true;
+                    error = true;
+                }
+                yield();
+            }
+
+            if (!error && s_logoCtx->file && s_logoCtx->srcW > 0) {
+                if (s_logoCtx->lastY != 0xFFFF) logo_flush_row(s_logoCtx->lastY);
+                s_logoCtx->file.close();
+                SPIFFS.remove("/logo.bin");
+                SPIFFS.rename("/logo.tmp", "/logo.bin");
+                ok = true;
+                s_logoUploadOk = true;
+                logoReloadRequested = true;
+                Serial.printf("[LOGO] /logo.bin written OK (%u pixels)\n", s_logoCtx->pixCount);
+            } else {
+                if (s_logoCtx->file) s_logoCtx->file.close();
+                SPIFFS.remove("/logo.tmp");
+                Serial.println("[LOGO] Decode failed — logo.bin preserved");
+            }
+        }
+
+        pngle_destroy(s_logoCtx->pngle);
+        delete s_logoCtx;
+        s_logoCtx = nullptr;
+
+        free(pngBuffer);
+        pngBuffer = nullptr;
+        pngBufLen = pngBufCap = 0;
+        logoUploadInProgress = false;
+        Serial.printf("[LOGO] Decode %s\n", ok ? "OK" : "FAILED");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +417,41 @@ void WiFiManager::startServer() {
     });
 
     // -----------------------------------------------------------------------
+    // /faults — GET: fault log JSON   DELETE: clear fault log
+    // -----------------------------------------------------------------------
+    server->on("/faults", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleFaultLog(request);
+    });
+
+    server->on("/faults", HTTP_DELETE, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleFaultLogDelete(request);
+    });
+
+    // -----------------------------------------------------------------------
+    // /dial-settings — GET: read local M5Dial config (NVS)
+    //                  POST: update local M5Dial config
+    // Stores finalDrive and wheelCirc for EfficiencyTracker — not sent to VCU
+    // -----------------------------------------------------------------------
+    server->on("/dial-settings", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleDialSettingsGet(request);
+    });
+
+    server->on("/dial-settings", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            request->send(200, "text/plain", "ok");
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len,
+           size_t index, size_t total) {
+            if (!instance) return;
+            instance->handleDialSettingsPost(request, data, len, index, total);
+        }
+    );
+
+    // -----------------------------------------------------------------------
     // /version
     // -----------------------------------------------------------------------
     server->on("/version", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -290,6 +476,88 @@ void WiFiManager::startServer() {
     );
 
     // -----------------------------------------------------------------------
+    // /upload-logo  POST — accepts PNG, decodes, saves /logo.bin to SPIFFS
+    // /delete-logo  DELETE — removes /logo.bin
+    // -----------------------------------------------------------------------
+    server->on("/upload-logo", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            // Immediate response — browser polls /logo-status for decode result
+            AsyncWebServerResponse* resp = request->beginResponse(200, "application/json",
+                "{\"ok\":true,\"message\":\"Buffered — decoding in background\"}");
+            resp->addHeader("Access-Control-Allow-Origin", "*");
+            request->send(resp);
+        },
+        [](AsyncWebServerRequest* request, const String& filename,
+           size_t index, uint8_t* data, size_t len, bool final) {
+            // Buffer raw PNG bytes only — all pngle/SPIFFS work happens in update()
+            // on the loopTask so the async_tcp watchdog is never starved.
+            if (index == 0) {
+                s_logoUploadOk = false;
+                Serial.printf("[LOGO] Upload start, filename=%s\n", filename.c_str());
+                if (instance) {
+                    if (instance->pngBuffer) { free(instance->pngBuffer); instance->pngBuffer = nullptr; }
+                    instance->pngBufLen  = 0;
+                    instance->pngBufCap  = 0;
+                    instance->pngPending = false;
+                    instance->logoUploadInProgress = true;
+                }
+            }
+            if (instance && len > 0) {
+                size_t needed = instance->pngBufLen + len;
+                if (needed > instance->pngBufCap) {
+                    size_t newCap = needed + 4096;
+                    uint8_t* nb = (uint8_t*)realloc(instance->pngBuffer, newCap);
+                    if (nb) { instance->pngBuffer = nb; instance->pngBufCap = newCap; }
+                    else {
+                        Serial.println("[LOGO] realloc failed");
+                        free(instance->pngBuffer);
+                        instance->pngBuffer = nullptr;
+                        instance->pngBufLen = instance->pngBufCap = 0;
+                        instance->logoUploadInProgress = false;
+                        return;
+                    }
+                }
+                memcpy(instance->pngBuffer + instance->pngBufLen, data, len);
+                instance->pngBufLen += len;
+            }
+            if (final) {
+                Serial.printf("[LOGO] Upload buffered %u bytes — decode deferred\n",
+                    instance ? (unsigned)instance->pngBufLen : 0);
+                if (instance && instance->pngBuffer && instance->pngBufLen > 0) {
+                    instance->pngPending = true;
+                } else {
+                    if (instance) instance->logoUploadInProgress = false;
+                    Serial.println("[LOGO] Nothing buffered");
+                }
+            }
+        },
+        nullptr
+    );
+
+    server->on("/delete-logo", HTTP_DELETE, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleLogoDelete(request);
+    });
+
+    // /logo-status — polled by browser after upload to know when deferred decode finishes
+    server->on("/logo-status", HTTP_GET, [](AsyncWebServerRequest* request) {
+        String state;
+        if (instance && instance->pngPending) {
+            state = "pending";
+        } else if (instance && instance->logoUploadInProgress) {
+            state = "decoding";
+        } else if (s_logoUploadOk) {
+            state = "ok";
+        } else {
+            state = "failed";
+        }
+        AsyncWebServerResponse* resp = request->beginResponse(200, "application/json",
+            "{\"state\":\"" + state + "\"}");
+        resp->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(resp);
+    });
+
+    // -----------------------------------------------------------------------
     // Catch-all — serve static files from SPIFFS (with .gz support)
     // -----------------------------------------------------------------------
     server->onNotFound([](AsyncWebServerRequest* request) {
@@ -298,6 +566,27 @@ void WiFiManager::startServer() {
             request->send(404, "text/plain", "Not Found: " + request->url());
         }
     });
+
+    // -----------------------------------------------------------------------
+    // /health-settings — GET: read health thresholds + fail behaviour (NVS)
+    //                    POST: update and persist
+    // -----------------------------------------------------------------------
+    server->on("/health-settings", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (!instance) { request->send(500); return; }
+        instance->handleHealthSettingsGet(request);
+    });
+
+    server->on("/health-settings", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            request->send(200, "text/plain", "ok");
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len,
+           size_t index, size_t total) {
+            if (!instance) return;
+            instance->handleHealthSettingsPost(request, data, len, index, total);
+        }
+    );
 
     // -----------------------------------------------------------------------
     // /refetch — trigger fresh VCU parameter download via SDO
@@ -740,6 +1029,151 @@ void WiFiManager::handleTripLogDelete(AsyncWebServerRequest* request) {
 }
 
 // ---------------------------------------------------------------------------
+// handleFaultLog — GET /faults
+// Returns NVS fault/opmode log as JSON array, newest first
+// ---------------------------------------------------------------------------
+void WiFiManager::handleFaultLog(AsyncWebServerRequest* request) {
+    String json = FaultLogger::getInstance().getJSON();
+    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    resp->addHeader("Cache-Control", "no-cache");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleFaultLogDelete — DELETE /faults
+// Clears all fault log entries from NVS
+// ---------------------------------------------------------------------------
+void WiFiManager::handleFaultLogDelete(AsyncWebServerRequest* request) {
+    FaultLogger::getInstance().clear();
+    AsyncWebServerResponse* resp = request->beginResponse(200, "text/plain", "cleared");
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleDialSettingsGet — GET /dial-settings
+// Returns M5Dial-local config (finalDrive, wheelCirc) as JSON
+// ---------------------------------------------------------------------------
+void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
+    Preferences prefs;
+    prefs.begin("dialsettings", true);
+    float    finalDrive  = prefs.getFloat("finalDrive",  4.10f);
+    float    wheelCirc   = prefs.getFloat("wheelCirc",   1.88f);
+    uint16_t screenMask   = prefs.getUShort("screenMask",  0xFFFF);
+    bool     immobEnabled = prefs.getBool("immobEnabled",  true);
+    uint16_t immobWriteId = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
+    uint16_t immobReadId  = prefs.getUShort("immobReadId",  VCU_SPOT_DRIVE_INHIBITED);
+    prefs.end();
+
+    String json = "{\"finalDrive\":"   + String(finalDrive, 2) +
+                  ",\"wheelCirc\":"    + String(wheelCirc,  2) +
+                  ",\"screenMask\":"   + String(screenMask)    +
+                  ",\"immobEnabled\":" + String(immobEnabled ? "true" : "false") +
+                  ",\"immobWriteId\":" + String(immobWriteId) +
+                  ",\"immobReadId\":"  + String(immobReadId)  + "}";
+    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleDialSettingsPost — POST /dial-settings
+// Saves finalDrive and/or wheelCirc to NVS and updates EfficiencyTracker
+// ---------------------------------------------------------------------------
+void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
+                                          uint8_t* data, size_t len,
+                                          size_t index, size_t total) {
+    String body = "";
+    for (size_t i = 0; i < len; i++) body += (char)data[i];
+
+    Preferences prefs;
+    prefs.begin("dialsettings", false);
+    float    finalDrive   = prefs.getFloat("finalDrive",   4.10f);
+    float    wheelCirc    = prefs.getFloat("wheelCirc",    1.88f);
+    uint16_t screenMask   = prefs.getUShort("screenMask",  0xFFFF);
+    bool     immobEnabled = prefs.getBool("immobEnabled",  true);
+
+    int idx = body.indexOf("\"finalDrive\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        float v = body.substring(colon + 1, comma).toFloat();
+        if (v > 1.0f && v < 20.0f) { finalDrive = v; prefs.putFloat("finalDrive", v); }
+    }
+
+    idx = body.indexOf("\"wheelCirc\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        float v = body.substring(colon + 1, comma).toFloat();
+        if (v > 0.5f && v < 4.0f) { wheelCirc = v; prefs.putFloat("wheelCirc", v); }
+    }
+
+    idx = body.indexOf("\"screenMask\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        int v = body.substring(colon + 1, comma).toInt();
+        // Force Dashboard(2), WiFi(10), Settings(11) always on
+        uint16_t forced = (1u << SCREEN_DASHBOARD) | (1u << SCREEN_WIFI) | (1u << SCREEN_SETTINGS);
+        screenMask = (uint16_t)v | forced;
+        prefs.putUShort("screenMask", screenMask);
+        if (uiManager) uiManager->setScreenMask(screenMask);  // apply live
+        Serial.printf("[WIFI] screenMask updated: 0x%04X\n", screenMask);
+    }
+
+    idx = body.indexOf("\"immobEnabled\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        String val = body.substring(colon + 1, comma);
+        val.trim();
+        immobEnabled = (val == "true");
+        prefs.putBool("immobEnabled", immobEnabled);
+        if (immobilizer) immobilizer->setEnabled(immobEnabled);  // apply live
+        Serial.printf("[WIFI] immobEnabled updated: %s\n", immobEnabled ? "true" : "false");
+    }
+
+    idx = body.indexOf("\"immobWriteId\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        int v = body.substring(colon + 1, comma).toInt();
+        if (v >= 0 && v <= 65535) {
+            prefs.putUShort("immobWriteId", (uint16_t)v);
+            uint16_t rid = prefs.getUShort("immobReadId", VCU_SPOT_DRIVE_INHIBITED);
+            if (immobilizer) immobilizer->setInhibitParams((uint16_t)v, rid);
+            Serial.printf("[WIFI] immobWriteId updated: %d\n", v);
+        }
+    }
+
+    idx = body.indexOf("\"immobReadId\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        int v = body.substring(colon + 1, comma).toInt();
+        if (v >= 0 && v <= 65535) {
+            prefs.putUShort("immobReadId", (uint16_t)v);
+            uint16_t wid = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
+            if (immobilizer) immobilizer->setInhibitParams(wid, (uint16_t)v);
+            Serial.printf("[WIFI] immobReadId updated: %d\n", v);
+        }
+    }
+
+    prefs.end();
+    EfficiencyTracker::getInstance().setDriveParams(finalDrive, wheelCirc);
+    Serial.printf("[WIFI] dial-settings updated: finalDrive=%.2f wheelCirc=%.2f\n",
+                  finalDrive, wheelCirc);
+}
+
+// ---------------------------------------------------------------------------
 // handleSpot — build live values JSON purely from in-memory parameter cache
 // No SPIFFS, no deserialization — just loop over parameters[] array
 // ---------------------------------------------------------------------------
@@ -765,4 +1199,109 @@ void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
     resp->addHeader("Access-Control-Allow-Origin", "*");
     resp->addHeader("Cache-Control", "no-cache");
     request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleHealthSettingsGet — GET /health-settings
+// Returns current thresholds and fail behaviour as JSON
+// ---------------------------------------------------------------------------
+void WiFiManager::handleHealthSettingsGet(AsyncWebServerRequest* request) {
+    HealthChecker& hc = HealthChecker::getInstance();
+    String json = "{";
+    json += "\"failBehav\":"   + String((int)hc.getFailBehaviour())  + ",";
+    json += "\"cdWarn\":"      + String(hc.getCellDeltaWarn(),  1)   + ",";
+    json += "\"cdFail\":"      + String(hc.getCellDeltaFail(),  1)   + ",";
+    json += "\"mcWarn\":"      + String(hc.getMinCellWarn(),    3)   + ",";
+    json += "\"mcFail\":"      + String(hc.getMinCellFail(),    3)   + ",";
+    json += "\"mtWarn\":"      + String(hc.getMotorTempWarn(),  1)   + ",";
+    json += "\"mtFail\":"      + String(hc.getMotorTempFail(),  1)   + ",";
+    json += "\"itWarn\":"      + String(hc.getInvTempWarn(),    1)   + ",";
+    json += "\"itFail\":"      + String(hc.getInvTempFail(),    1)   + ",";
+    json += "\"pvWarn\":"      + String(hc.getPackVoltWarn(),   1)   + ",";
+    json += "\"pvFail\":"      + String(hc.getPackVoltFail(),   1);
+    json += "}";
+    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    resp->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(resp);
+}
+
+// ---------------------------------------------------------------------------
+// handleHealthSettingsPost — POST /health-settings
+// Accepts JSON body, updates HealthChecker, saves to NVS
+// ---------------------------------------------------------------------------
+void WiFiManager::handleHealthSettingsPost(AsyncWebServerRequest* request,
+                                            uint8_t* data, size_t len,
+                                            size_t index, size_t total) {
+    String body = "";
+    for (size_t i = 0; i < len; i++) body += (char)data[i];
+
+    HealthChecker& hc = HealthChecker::getInstance();
+
+    // Helper: extract float value for a key from a simple JSON string
+    auto getF = [&](const char* key, float def) -> float {
+        String k = "\""; k += key; k += "\":";
+        int idx = body.indexOf(k);
+        if (idx < 0) return def;
+        int start = idx + k.length();
+        int end = body.indexOf(',', start);
+        if (end < 0) end = body.indexOf('}', start);
+        String s = body.substring(start, end);
+        s.trim();
+        return s.toFloat();
+    };
+    auto getI = [&](const char* key, int def) -> int {
+        String k = "\""; k += key; k += "\":";
+        int idx = body.indexOf(k);
+        if (idx < 0) return def;
+        int start = idx + k.length();
+        int end = body.indexOf(',', start);
+        if (end < 0) end = body.indexOf('}', start);
+        String s = body.substring(start, end);
+        s.trim();
+        return s.toInt();
+    };
+
+    hc.setFailBehaviour((HealthFailBehaviour)getI("failBehav", (int)HealthFailBehaviour::SEVERITY));
+    hc.setCellDeltaWarn(getF("cdWarn", hc.getCellDeltaWarn()));
+    hc.setCellDeltaFail(getF("cdFail", hc.getCellDeltaFail()));
+    hc.setMinCellWarn(  getF("mcWarn", hc.getMinCellWarn()));
+    hc.setMinCellFail(  getF("mcFail", hc.getMinCellFail()));
+    hc.setMotorTempWarn(getF("mtWarn", hc.getMotorTempWarn()));
+    hc.setMotorTempFail(getF("mtFail", hc.getMotorTempFail()));
+    hc.setInvTempWarn(  getF("itWarn", hc.getInvTempWarn()));
+    hc.setInvTempFail(  getF("itFail", hc.getInvTempFail()));
+    hc.setPackVoltWarn( getF("pvWarn", hc.getPackVoltWarn()));
+    hc.setPackVoltFail( getF("pvFail", hc.getPackVoltFail()));
+    hc.saveToNVS();
+
+    Serial.println("[WiFi] Health settings updated and saved");
+}
+
+// ---------------------------------------------------------------------------
+// Logo upload state — lives for the duration of one POST request
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// handleLogoUpload — legacy stub, actual upload handled inline in startServer()
+void WiFiManager::handleLogoUpload(AsyncWebServerRequest* request,
+                                    const String& filename,
+                                    size_t index, uint8_t* data,
+                                    size_t len, bool final) {
+    // No-op — upload is handled by the inline body lambda in startServer()
+}
+
+// ---------------------------------------------------------------------------
+// handleLogoDelete — DELETE /delete-logo
+// ---------------------------------------------------------------------------
+void WiFiManager::handleLogoDelete(AsyncWebServerRequest* request) {
+    if (SPIFFS.exists("/logo.bin")) {
+        SPIFFS.remove("/logo.bin");
+        logoReloadRequested = true;   // clears live widget via main.cpp → reloadLogo()
+        Serial.println("[LOGO] /logo.bin deleted");
+        AsyncWebServerResponse* resp = request->beginResponse(200, "application/json",
+            "{\"ok\":true,\"message\":\"Logo removed\"}");
+        resp->addHeader("Access-Control-Allow-Origin", "*");
+        request->send(resp);
+    } else {
+        request->send(404, "application/json", "{\"ok\":false,\"message\":\"No logo\"}");
+    }
 }

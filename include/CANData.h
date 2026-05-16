@@ -77,6 +77,14 @@ public:
     uint32_t getSDOFailureCount()  { return sdoManager.getFailureCount(); }
     uint32_t getSDOTimeoutCount()  { return sdoManager.getTimeoutCount(); }
 
+    // SDO manager access — used by Immobilizer to queue high-priority writes
+    SDOManager* getSDOManager() { return &sdoManager; }
+
+    // Public SDO result dispatcher — called from main's onSDOResult() after
+    // the immobilizer has claimed param 156 / spot 2124.
+    // Forwards to the private updateParameterBySDOId() logic.
+    void onSDOResult(const SDOResult& result);
+
     // -----------------------------------------------------------------------
     // Optional raw frame observer — called for every received CAN frame
     // before processing. Used by GVRETServer to stream frames to SavvyCAN.
@@ -91,7 +99,7 @@ private:
 
     SDOManager sdoManager;
 
-    static void onSDOResult(const SDOResult& result);
+    static void sdoResultCallback(const SDOResult& result);
     static CANDataManager* instance;
 
     CANMessage txQueue[TX_QUEUE_SIZE];

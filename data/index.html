@@ -164,6 +164,14 @@
 					<img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' width='24' height='24'%3E%3Cpath d='M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9l1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 7 1.4z'/%3E%3C/svg%3E">
 					<p class="navbar-text">TRIP LOG</p>
 				</a>
+				<a class="tablink" href="/faults.html" target="_blank">
+					<img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' width='24' height='24'%3E%3Cpath d='M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z'/%3E%3C/svg%3E">
+					<p class="navbar-text">FAULT LOG</p>
+				</a>
+				<a class="tablink" href="/settings.html" target="_blank">
+					<img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' width='24' height='24'%3E%3Cpath d='M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.02 7.02 0 0 0-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.37 1.04.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z'/%3E%3C/svg%3E">
+					<p class="navbar-text">SETTINGS</p>
+				</a>
 			</div>
 
 			<!-- spinner div -->
@@ -283,13 +291,22 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 				<!-- PARAMETERS -->
 				<div id="parameters" class="tabdiv main-content">
 
+					<!-- Unsaved changes reminder -->
+					<div id="param-unsaved-remind" style="display:none; background:#fff3cd; border:1px solid #ffc107; border-radius:4px; padding:8px 14px; margin-bottom:10px; font-size:11pt;">
+						&#9888; Unsaved changes — click <strong>Save to Flash</strong> to persist across power cycles.
+					</div>
+
 					<div class="main-right">
 						<h3 class="underline">Save & Load</h3>
 
+						<!-- Apply pending changes -->
+						<button id="btn-param-apply" onclick="ui.applyParamChanges();">
+							<img class="buttonimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black' width='24' height='24'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z'/%3E%3C/svg%3E">Apply changes</button>
+
 						<!-- Save params to flash -->
-						<button onclick="ui.showParamsSavedModal();">
+						<button id="btn-param-save" onclick="ui.saveParamChanges();">
 							<!-- /icon-save.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAALhJREFUSIndlUsOgjAQhj+M0RNI4lU0Xs8H12LJDhaeADwGbqamNLSZERJj/2TS5/xf21kUctIeqIABGA3RAKUGUBmN/eg0EHfyk4xdckqlmKsgoaEGAHAAWtn7BI5rA9SQGCAVtbfff65GA6iNAAeJ3tzyJClNfDYrGCb1U4CmBrFafFR4/TGYs9YjzCsAtobEmJIHybvI/wd4SXte4HeRdphbvPP9hxPGdQ6wAx5Av8C4B27ilYnep/GG5uAVCQ8AAAAASUVORK5CYII=">Save parameters to flash</button>
+							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAALhJREFUSIndlUsOgjAQhj+M0RNI4lU0Xs8H12LJDhaeADwGbqamNLSZERJj/2TS5/xf21kUctIeqIABGA3RAKUGUBmN/eg0EHfyk4xdckqlmKsgoaEGAHAAWtn7BI5rA9SQGCAVtbfff65GA6iNAAeJ3tzyJClNfDYrGCb1U4CmBrFafFR4/TGYs9YjzCsAtobEmJIHybvI/wd4SXte4HeRdphbvPP9hxPGdQ6wAx5Av8C4B27ilYnep/GG5uAVCQ8AAAAASUVORK5CYII=">Save to flash</button>
 
 						<!-- Restore params from flash -->
 						<button onclick="ui.showRestoreParamsFromFlashConfirmationModal();">
