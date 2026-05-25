@@ -8,7 +8,7 @@
 
 ## Headline Features
 
-### Automotive-Grade Immobilizer System
+Immobilizer System
 
 The M5Dial now includes a full multi-factor vehicle immobilizer. The system communicates directly with the ZombieVerter VCU via SDO — when locked, it writes `DriveInhibit=2` to the VCU, physically preventing the motor from running regardless of throttle input. Unlocking writes `DriveInhibit=0` and confirms via a read-back of the spot value.
 
@@ -135,6 +135,6 @@ NVS keys `screenMask`, `immobEnabled`, `immobWriteId`, `immobReadId` are new. Th
 ## Credits
 
 Original ZombieVerter Display: Jamie Jones (jamiejones85)
-M5Stack Dial port and extensions: Robert Wahler (robertwa1974)
+M5Stack Dial port and extensions: RobW (robertwa1974)
 GVRET protocol: Collin Kidder (collin80/SavvyCAN)
 ZombieVerter VCU: Damien Maguire / openinverter.org community
