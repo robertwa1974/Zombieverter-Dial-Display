@@ -1,4 +1,5 @@
 #include "SDOManager.h"
+#include "Config.h"
 
 // ============================================================================
 // Construction
@@ -236,7 +237,9 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
                 (msg.data[6] << 16) |
                 (msg.data[7] << 24)
             );
+            #if DEBUG_SDO
             Serial.printf("[SDO] RX Read OK param %d = %d\n", paramId, value);
+            #endif
             deliverResult(true, paramId, value, false);
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                 successCount++;
@@ -317,9 +320,11 @@ bool SDOManager::sendFrame(uint8_t cmd, uint16_t paramId, int32_t value) {
         return false;
     }
 
+    #if DEBUG_SDO
     Serial.printf("[SDO] TX [%02X %02X %02X %02X %02X %02X %02X %02X]\n",
                   tx.data[0], tx.data[1], tx.data[2], tx.data[3],
                   tx.data[4], tx.data[5], tx.data[6], tx.data[7]);
+    #endif
     return true;
 }
 

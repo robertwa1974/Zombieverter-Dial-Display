@@ -132,6 +132,10 @@
 				<a class="tablink" href="/ota.html" target="_blank">
 					<!-- /icon-cpu.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAALlJREFUSInVVe0ORTAMPRG53gnvd/FavMrmMfihZGa6dhdxT9JI+nW6VVcgjp5EqldjIpHqd8iuqEBDUADoAFgcK5w88fUWQAvgwxF2gURaaTiCtfKSczpBRbGGcxI1ThP/SJP7ELMD1+7L2RxsdskJ6kQbyxzTiX0fH7RbCGJNTsHW5FwZdBmzC81vGr2J/5xkFyN9q4Rc69BZzqnF78/1lyMoiMQkJDZYdgG7cEJ4906WDNqg1O8wA3zYflZwNkaoAAAAAElFTkSuQmCC"><p class="navbar-text">UPDATE</p></a>
+				<a class="tablink" href="/logo.html" target="_blank">
+					<img class="navimg" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white' width='24' height='24'%3E%3Cpath d='M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z'/%3E%3C/svg%3E">
+					<p class="navbar-text">LOGO</p>
+				</a>
 				<a class="tablink" onclick="ui.openPage('parameters', this, 'white')">
 					<!-- /icon-sliders.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAGxJREFUSIljYBhu4DAU00qe4T8UU02eCZ9t1AAjw4LDDJhhC+PjjVBiLaAqIJRKSNbPgqbgCAWGUwUQykgEfUAI2BCQxxoCyKkEHaO7luQ4GnSpCJs83hAYEj7AKz8oyqLBbQGpRQWl8kMQAADlPjazklCDTgAAAABJRU5ErkJggg=="><p class="navbar-text">PARAMETERS</p></a>
@@ -210,6 +214,15 @@
 						<button onclick="ui.sendCmd('stop');">
 							<!-- icon-square.png -->
 							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAHNJREFUSIntlTEOgCAMRV8c5E7i/RTuCR5DB8ugaRwogxp+0nRo8h5h+fCnOCACGdgrJwMBGDVBNIDvs2qC8vKp7gMA8MJI2rHYrblwhgbAx3RBF3RBF7xNsMn2Bt4sO2vHQLvCWTSBE0kygBNnm6mV+c0cZy9SUXHYiZQAAAAASUVORK5CYII=">Stop inverter</button>
+						
+						<!-- GVRET SavvyCAN Bridge -->
+						<hr style="margin:16px 0; border:0; border-top:1px solid #2d3436;">
+						<button id="gvretBtn" onclick="toggleGVRET();" style="background:#6c5ce7;">
+							<span id="gvretBtnText">Start GVRET</span>
+						</button>
+						<div id="gvretStatus" style="font-size:10pt; color:#999; margin-top:8px;">
+							SavvyCAN bridge (port 23)
+						</div>
 
 					</div>
 
@@ -577,7 +590,7 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 						<p>Paid support is also available. See details <a href="https://openinverter.org/docs/index.html%3Fen_consulting,35.html">here</a>.
 					</div>
 				</div>
-				<!-- END SUPPORT
+				<!-- END SUPPORT -->
 <script>
 let wakeLock = null;
 async function requestWakeLock() {
@@ -593,4 +606,46 @@ document.addEventListener('visibilitychange', () => {
   else releaseWakeLock();
 });
 requestWakeLock();
+
+// GVRET Server Control
+function updateGVRETStatus() {
+    fetch('/gvret-status')
+        .then(r => r.text())
+        .then(status => {
+            var btn = document.getElementById('gvretBtn');
+            var btnText = document.getElementById('gvretBtnText');
+            var stat = document.getElementById('gvretStatus');
+            if (!btn || !btnText || !stat) return;
+            
+            if (status === 'running') {
+                btn.style.background = '#e74c3c';  // red when running
+                btnText.textContent = 'Stop GVRET';
+                stat.innerHTML = '● Running on port 23 <span style="color:#4CAF50;">(connect SavvyCAN now)</span>';
+                stat.style.color = '#4CAF50';
+            } else {
+                btn.style.background = '#6c5ce7';  // purple when stopped
+                btnText.textContent = 'Start GVRET';
+                stat.innerHTML = '○ Stopped';
+                stat.style.color = '#999';
+            }
+        })
+        .catch(() => {});
+}
+
+function toggleGVRET() {
+    fetch('/gvret-status')
+        .then(r => r.text())
+        .then(status => {
+            var endpoint = (status === 'running') ? '/gvret-stop' : '/gvret-start';
+            return fetch(endpoint, { method: 'POST' });
+        })
+        .then(() => {
+            setTimeout(updateGVRETStatus, 500);
+        })
+        .catch(() => {});
+}
+
+// Poll GVRET status every 3 seconds
+setInterval(updateGVRETStatus, 3000);
+updateGVRETStatus();  // initial check on page load
 </script>

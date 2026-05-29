@@ -241,7 +241,8 @@ void WiFiManager::startAP() {
     }
 
     startServer();
-    GVRETServer::getInstance().begin();
+    // Don't auto-start GVRET — user must click "Start GVRET" button in web UI
+    // GVRETServer::getInstance().begin();
     active = true;
 }
 
@@ -251,7 +252,8 @@ void WiFiManager::startAP() {
 void WiFiManager::stopAP() {
     if (!active) return;
     stopServer();
-    GVRETServer::getInstance().stop();
+    // GVRET is stopped separately via /gvret-stop endpoint if user wants
+    // GVRETServer::getInstance().stop();
     MDNS.end();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
@@ -599,6 +601,32 @@ void WiFiManager::startServer() {
     );
 
     // -----------------------------------------------------------------------
+    // GVRET Server Control
+    // -----------------------------------------------------------------------
+    server->on("/gvret-start", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            if (!instance) { request->send(500); return; }
+            instance->startGVRET();
+            request->send(200, "text/plain", "GVRET started on port 23");
+        }
+    );
+
+    server->on("/gvret-stop", HTTP_POST,
+        [](AsyncWebServerRequest* request) {
+            if (!instance) { request->send(500); return; }
+            instance->stopGVRET();
+            request->send(200, "text/plain", "GVRET stopped");
+        }
+    );
+
+    server->on("/gvret-status", HTTP_GET,
+        [](AsyncWebServerRequest* request) {
+            bool running = GVRETServer::getInstance().isRunning();
+            request->send(200, "text/plain", running ? "running" : "stopped");
+        }
+    );
+
+    // -----------------------------------------------------------------------
     // CAN Monitor — WebSocket + REST endpoints
     // -----------------------------------------------------------------------
     CANMonitor::instance().registerEndpoints(server);
@@ -617,6 +645,23 @@ void WiFiManager::stopServer() {
     delete server;
     server = nullptr;
     serverStarted = false;
+}
+
+// ---------------------------------------------------------------------------
+// GVRET Server Control
+// ---------------------------------------------------------------------------
+void WiFiManager::startGVRET() {
+    if (!GVRETServer::getInstance().isRunning()) {
+        GVRETServer::getInstance().begin();
+        Serial.println("[WiFi] GVRET server started by user");
+    }
+}
+
+void WiFiManager::stopGVRET() {
+    if (GVRETServer::getInstance().isRunning()) {
+        GVRETServer::getInstance().stop();
+        Serial.println("[WiFi] GVRET server stopped by user");
+    }
 }
 
 // ===========================================================================
@@ -1064,6 +1109,7 @@ void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
     bool     immobEnabled = prefs.getBool("immobEnabled",  true);
     uint16_t immobWriteId = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
     uint16_t immobReadId  = prefs.getUShort("immobReadId",  VCU_SPOT_DRIVE_INHIBITED);
+    bool     fetchOnBoot  = prefs.getBool("fetchOnBoot",  false);
     prefs.end();
 
     String json = "{\"finalDrive\":"   + String(finalDrive, 2) +
@@ -1071,7 +1117,8 @@ void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
                   ",\"screenMask\":"   + String(screenMask)    +
                   ",\"immobEnabled\":" + String(immobEnabled ? "true" : "false") +
                   ",\"immobWriteId\":" + String(immobWriteId) +
-                  ",\"immobReadId\":"  + String(immobReadId)  + "}";
+                  ",\"immobReadId\":"  + String(immobReadId)  +
+                  ",\"fetchOnBoot\":"  + String(fetchOnBoot ? "true" : "false") + "}";
     AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
     resp->addHeader("Access-Control-Allow-Origin", "*");
     request->send(resp);
@@ -1165,6 +1212,18 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
             if (immobilizer) immobilizer->setInhibitParams(wid, (uint16_t)v);
             Serial.printf("[WIFI] immobReadId updated: %d\n", v);
         }
+    }
+
+    idx = body.indexOf("\"fetchOnBoot\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        String val = body.substring(colon + 1, comma);
+        val.trim();
+        bool fetchOnBoot = (val == "true");
+        prefs.putBool("fetchOnBoot", fetchOnBoot);
+        Serial.printf("[WIFI] fetchOnBoot updated: %s\n", fetchOnBoot ? "true" : "false");
     }
 
     prefs.end();

@@ -45,6 +45,10 @@ public:
     void startAP();
     void stopAP();
 
+    // GVRET server control
+    void startGVRET();
+    void stopGVRET();
+
     // Called from main.cpp setup() so dial-settings POST can update live objects
     void setUIManager(UIManager* ui)       { uiManager = ui; }
     void setImmobilizer(Immobilizer* imm)  { immobilizer = imm; }

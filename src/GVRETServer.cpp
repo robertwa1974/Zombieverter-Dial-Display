@@ -32,12 +32,24 @@ void GVRETServer::stop() {
 // ---------------------------------------------------------------------------
 void GVRETServer::update() {
     if (!_running) return;
+    
+    // First, clean up any dead connections
+    for (int i = 0; i < GVRET_MAX_CLIENTS; i++) {
+        if (_clients[i] && !_clients[i].connected()) {
+            Serial.printf("[GVRET] Client %d disconnected (cleanup)\n", i);
+            _clients[i].stop();
+            if (_clientCount > 0) _clientCount--;
+        }
+    }
+    
     _acceptClients();
+    
     for (int i = 0; i < GVRET_MAX_CLIENTS; i++) {
         if (_clients[i].connected() && _clients[i].available()) {
             _processClientInput(i);
         }
     }
+    
     if (millis() - _lastFlush >= GVRET_FLUSH_MS) {
         _flushFrameBuffer();
         _lastFlush = millis();
@@ -158,8 +170,9 @@ void GVRETServer::_handleCommand(int clientIdx, uint8_t cmd,
             break;
 
         case GVRET_CMD_GET_INFO: {
-            // 0x01 = time sync. Response: 0xF1 0x01 + uint32 timestamp (micros)
-            // SavvyCAN uses this to calibrate its time base.
+            // 0x01 = time sync / keepalive ping.
+            // SavvyCAN uses this to calibrate its time base AND as a keepalive.
+            // CRITICAL: respond immediately — SavvyCAN times out after ~60s without response.
             uint32_t ts = (uint32_t)micros();
             uint8_t resp[4];
             resp[0] = (ts)       & 0xFF;
@@ -167,6 +180,8 @@ void GVRETServer::_handleCommand(int clientIdx, uint8_t cmd,
             resp[2] = (ts >> 16) & 0xFF;
             resp[3] = (ts >> 24) & 0xFF;
             _sendResponse(clientIdx, GVRET_CMD_GET_INFO, resp, 4);
+            // Flush TCP buffer immediately to ensure fast response
+            _clients[clientIdx].flush();
             break;
         }
 

@@ -73,7 +73,8 @@
 
 // Debug
 #define DEBUG_SERIAL        true
-#define DEBUG_CAN           true   // Enable to see CAN messages
+#define DEBUG_CAN           false  // Enable to see CAN messages
+#define DEBUG_SDO           false  // Enable to see SDO TX/RX traffic (very chatty)
 #define DEBUG_TOUCH         false
 
 #endif // CONFIG_H

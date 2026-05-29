@@ -17,8 +17,8 @@
 #include "SDOManager.h"
 
 // ── Firmware version strings — update on each release ────────────────────────
-#define DIAL_FW_VERSION   "v2.5.0"   // M5Dial firmware version
-#define UI_VERSION        "v2.5.0"   // Web UI version (ui.js / index.html)
+#define DIAL_FW_VERSION   "v2.5.1"   // M5Dial firmware version
+#define UI_VERSION        "v2.5.1"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
@@ -35,20 +35,53 @@ uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 uint8_t lastOpmode = 255;  // opmode change detection (255 = uninitialised)
 
+// ── Cached parameter pointers ─────────────────────────────────────────────────
+// Avoids 10 linear strcmp searches per loop() iteration.
+// Set to nullptr on boot; lazily resolved on first use.
+// Call invalidateParamCache() after any params reload (refetch).
+static CANParameter* g_pSpeed   = nullptr;
+static CANParameter* g_pUdc     = nullptr;
+static CANParameter* g_pIdc     = nullptr;
+static CANParameter* g_pSoc     = nullptr;
+static CANParameter* g_pTmphs   = nullptr;
+static CANParameter* g_pTmpm    = nullptr;
+static CANParameter* g_pPwr     = nullptr;
+static CANParameter* g_pPotnorm = nullptr;
+static CANParameter* g_pOpmode  = nullptr;
+
+void invalidateParamCache() {
+    g_pSpeed = g_pUdc = g_pIdc = g_pSoc = nullptr;
+    g_pTmphs = g_pTmpm = g_pPwr = g_pPotnorm = g_pOpmode = nullptr;
+}
+
+// Resolve all cached pointers in one pass — called once per loop after
+// canManager.update() so we're always working with fresh table state.
+void refreshParamCache() {
+    if (!g_pSpeed)   g_pSpeed   = canManager.getParameterByName("speed");
+    if (!g_pUdc)     g_pUdc     = canManager.getParameterByName("udc");
+    if (!g_pIdc)     g_pIdc     = canManager.getParameterByName("idc");
+    if (!g_pSoc)     g_pSoc     = canManager.getParameterByName("SOC");
+    if (!g_pTmphs)   g_pTmphs   = canManager.getParameterByName("tmphs");
+    if (!g_pTmpm)    g_pTmpm    = canManager.getParameterByName("tmpm");
+    if (!g_pPwr)     g_pPwr     = canManager.getParameterByName("pwr");
+    if (!g_pPotnorm) g_pPotnorm = canManager.getParameterByName("potnorm");
+    if (!g_pOpmode)  g_pOpmode  = canManager.getParameterByName("opmode");
+}
+
 // Fallback parameters — used only if SPIFFS params.json is missing or corrupt.
 const char* sampleParams = R"(
 {
   "parameters": [
-    {"id": 2,   "name": "speed",     "type": "int16", "unit": "rpm", "min": 0,    "max": 6000, "decimals": 0, "editable": false},
-    {"id": 3,   "name": "udc",       "type": "int16", "unit": "V",   "min": 0,    "max": 400,  "decimals": 0, "editable": false},
-    {"id": 7,   "name": "tmphs",     "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
-    {"id": 8,   "name": "tmpm",      "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
-    {"id": 27,  "name": "gear",      "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
-    {"id": 61,  "name": "regenmax",  "type": "int16", "unit": "%",   "min": -35,  "max": 0,    "decimals": 0, "editable": true},
-    {"id": 129, "name": "motactive", "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
-    {"id": 100, "name": "soc",       "type": "int16", "unit": "%",   "min": 0,    "max": 100,  "decimals": 0, "editable": false},
-    {"id": 101, "name": "idc",       "type": "int16", "unit": "A",   "min": -500, "max": 500,  "decimals": 0, "editable": false},
-    {"id": 102, "name": "battemp",   "type": "int16", "unit": "C",   "min": -40,  "max": 80,   "decimals": 0, "editable": false}
+    {"id": 2,   "name": "speed",      "type": "int16", "unit": "rpm", "min": 0,    "max": 6000, "decimals": 0, "editable": false},
+    {"id": 3,   "name": "udc",        "type": "int16", "unit": "V",   "min": 0,    "max": 400,  "decimals": 0, "editable": false},
+    {"id": 7,   "name": "tmphs",      "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
+    {"id": 8,   "name": "tmpm",       "type": "int16", "unit": "C",   "min": 0,    "max": 150,  "decimals": 0, "editable": false},
+    {"id": 27,  "name": "gear",       "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
+    {"id": 61,  "name": "regenmax",   "type": "int16", "unit": "%",   "min": -35,  "max": 0,    "decimals": 0, "editable": true},
+    {"id": 129, "name": "motactive",  "type": "int16", "unit": "",    "min": 0,    "max": 3,    "decimals": 0, "editable": true},
+    {"id": 100, "name": "soc",        "type": "int16", "unit": "%",   "min": 0,    "max": 100,  "decimals": 0, "editable": false},
+    {"id": 101, "name": "idc",        "type": "int16", "unit": "A",   "min": -500, "max": 500,  "decimals": 0, "editable": false},
+    {"id": 102, "name": "battemp",    "type": "int16", "unit": "C",   "min": -40,  "max": 80,   "decimals": 0, "editable": false}
   ]
 }
 )";
@@ -150,9 +183,8 @@ void onEncoderRotate(int32_t delta) {
             uiManager.setScreen(dest);
             return;
         }
-        // Safety: block gear change while moving
-        CANParameter* spd = canManager.getParameterByName("speed");
-        if (spd && abs(spd->getValueAsInt()) > 50) {
+        // Safety: block gear change while moving — use cached pointer
+        if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
             uiManager.showWarning("Vehicle moving\nStop before\nchanging gear");
             return;
         }
@@ -168,9 +200,8 @@ void onEncoderRotate(int32_t delta) {
             uiManager.setScreen(dest);
             return;
         }
-        // Safety: block motor mode change while moving
-        CANParameter* spd = canManager.getParameterByName("speed");
-        if (spd && abs(spd->getValueAsInt()) > 50) {
+        // Safety: block motor mode change while moving — use cached pointer
+        if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
             uiManager.showWarning("Vehicle moving\nStop before\nchanging motor");
             return;
         }
@@ -246,8 +277,7 @@ void onButtonClick() {
         } else {
             // Safety: block entering edit mode on Gear/Motor while moving
             if (currentScreen == SCREEN_GEAR || currentScreen == SCREEN_MOTOR) {
-                CANParameter* spd = canManager.getParameterByName("speed");
-                if (spd && abs(spd->getValueAsInt()) > 50) {
+                if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
                     uiManager.showWarning("Vehicle moving\nStop before\nediting");
                     return;
                 }
@@ -419,6 +449,23 @@ void onTouchTap(uint16_t x, uint16_t y) {
 }
 
 // ============================================================================
+// Shared SDO poll helper — identical logic used in both WiFi and normal mode
+// ============================================================================
+void pollNextSDOParam() {
+    if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
+        lastParamRequestTime = millis();
+        CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
+        if (param) {
+            canManager.requestParameter(param->id);
+        }
+        uint16_t paramCount = canManager.getParameterCount();
+        if (paramCount > 0) {
+            currentParamIndex = (currentParamIndex + 1) % paramCount;
+        }
+    }
+}
+
+// ============================================================================
 // setup
 // ============================================================================
 
@@ -427,7 +474,7 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     Serial.println("ZombieVerter Display - M5Stack Dial");
-    Serial.println("====================================");
+    Serial.println("=============================================");
     #endif
 
     if (!Hardware::init()) {
@@ -487,53 +534,96 @@ void setup() {
     wifiMode = false;
     lvglSuspended = false;
 
-    // -----------------------------------------------------------------------
-    // Parameter loading — try in order:
-    //   1. Fetch live from VCU via SDO (always up to date)
-    //   2. Load from SPIFFS params.json (cached from previous fetch)
-    //   3. Keep sample params (basic functionality only)
-    // -----------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Parameter loading (controlled by fetchOnBoot NVS toggle):
+    //   - If fetchOnBoot enabled: attempt VCU fetch → reboot on success
+    //   - If fetchOnBoot disabled or fetch fails: SPIFFS → sample params
+    // ---------------------------------------------------------------------------
     bool paramsLoaded = false;
+    bool fetchOnBoot = false;
+    
+    // Read fetch-on-boot preference from NVS
+    {
+        Preferences prefs;
+        prefs.begin("dialsettings", true);
+        fetchOnBoot = prefs.getBool("fetchOnBoot", false);  // default OFF
+        prefs.end();
+    }
 
-    Serial.println("Attempting to fetch parameters from VCU...");
-    // Show a "Fetching..." message on splash screen
-    uiManager.showFetchStatus("Fetching params\nfrom VCU...\n(up to 3 attempts)");
-    for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
+    if (fetchOnBoot) {
+        // Check heap before attempting fetch — need ~100KB + margin
+        size_t freeHeap = ESP.getFreeHeap();
+        Serial.printf("[Fetch] Free heap before fetch: %u bytes\n", freeHeap);
 
-    FetchResult fetchResult = canManager.fetchParamsFromVCU();
+        if (freeHeap < 150000) {
+            Serial.println("[Fetch] Heap too low — skipping auto-fetch");
+            Serial.println("[Fetch] Use web UI Refetch button if params changed");
+            uiManager.showFetchStatus("Heap low\nSkipping fetch");
+            delay(1500);
+        } else {
+            Serial.println("[Fetch] Auto-fetch enabled — attempting VCU download...");
+            uiManager.showFetchStatus("Fetching params\nfrom VCU...");
+            for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
 
-    if (fetchResult == FetchResult::SUCCESS) {
-        Serial.printf("Fetched %d parameters from VCU\n", canManager.getParameterCount());
-        paramsLoaded = true;
-        uiManager.showFetchStatus("VCU params loaded!");
-    } else {
-        Serial.printf("VCU fetch failed (%d), trying SPIFFS...\n", (int)fetchResult);
-        uiManager.showFetchStatus("VCU unavailable\nLoading cached...");
+            FetchResult fetchResult = canManager.fetchParamsFromVCU();
 
-        if (SPIFFS.exists("/params.json")) {
-            File paramFile = SPIFFS.open("/params.json", "r");
-            if (paramFile) {
-                size_t fileSize = paramFile.size();
-                if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
-                    String jsonContent = paramFile.readString();
-                    paramFile.close();
-                    if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
-                        Serial.printf("Loaded %d parameters from SPIFFS\n", canManager.getParameterCount());
-                        paramsLoaded = true;
-                        uiManager.showFetchStatus("Cached params\nloaded OK");
-                    }
-                } else {
-                    paramFile.close();
-                    SPIFFS.remove("/params.json");
+            if (fetchResult == FetchResult::SUCCESS) {
+                Serial.printf("[Fetch] Success: %d parameters\n", canManager.getParameterCount());
+                
+                // Clear the fetchOnBoot flag so next boot loads from SPIFFS (no infinite loop)
+                {
+                    Preferences prefs;
+                    prefs.begin("dialsettings", false);
+                    prefs.putBool("fetchOnBoot", false);
+                    prefs.end();
+                    Serial.println("[Fetch] Cleared fetchOnBoot flag for next boot");
                 }
+                
+                // Reboot for clean heap state — ensures WiFi/GVRET work reliably
+                uiManager.showFetchStatus("VCU params loaded!\nRebooting...");
+                delay(2000);
+                ESP.restart();
+                // Execution stops here — next boot has clean heap
+            } else {
+                Serial.printf("[Fetch] Failed (%d) — trying SPIFFS fallback\n", (int)fetchResult);
+                uiManager.showFetchStatus("VCU unavailable\nLoading cached...");
+                delay(1000);
             }
         }
+    } else {
+        Serial.println("[Fetch] Auto-fetch disabled — loading from SPIFFS or defaults");
+    }
 
-        if (!paramsLoaded) {
-            Serial.println("Using sample parameters only");
-            uiManager.showFetchStatus("Using defaults\nConnect VCU!");
+    // SPIFFS fallback (used when fetch disabled, failed, or skipped due to low heap)
+    if (!paramsLoaded && SPIFFS.exists("/params.json")) {
+        File paramFile = SPIFFS.open("/params.json", "r");
+        if (paramFile) {
+            size_t fileSize = paramFile.size();
+            if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
+                String jsonContent = paramFile.readString();
+                paramFile.close();
+                if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
+                    Serial.printf("[Params] Loaded %d from SPIFFS\n", canManager.getParameterCount());
+                    paramsLoaded = true;
+                    uiManager.showFetchStatus("Cached params\nloaded OK");
+                    delay(1000);
+                }
+            } else {
+                paramFile.close();
+                SPIFFS.remove("/params.json");
+            }
         }
     }
+
+    // Final fallback: sample params
+    if (!paramsLoaded) {
+        Serial.println("[Params] Using sample parameters only");
+        uiManager.showFetchStatus("Using defaults\nConnect VCU!");
+        delay(1500);
+    }
+
+    // Invalidate cache after params load so pointers are resolved fresh on first loop
+    invalidateParamCache();
 
     // Start SDO manager AFTER fetch so it doesn't consume our response frames
     canManager.initSDO();
@@ -634,19 +724,19 @@ void setup() {
 
     #if DEBUG_SERIAL
     Serial.println("System ready!");
-    Serial.println("====================================");
+    Serial.println("=============================================");
     Serial.println("Controls:");
     Serial.println("  Rotate: Switch screens");
     Serial.println("  Click: Toggle WiFi mode");
     Serial.println("  Double-click: (Reserved)");
     Serial.println("  Long-press: Back to Dashboard");
-    Serial.println("====================================");
+    Serial.println("=============================================");
     Serial.println("WiFi Mode:");
     Serial.println("  Click button to enable WiFi AP");
     Serial.println("  Connect to: " WIFI_AP_SSID);
     Serial.println("  Password: " WIFI_AP_PASSWORD);
     Serial.println("  Browse to: 192.168.4.1");
-    Serial.println("====================================");
+    Serial.println("=============================================");
     #endif
 }
 
@@ -656,6 +746,23 @@ void setup() {
 
 void loop() {
     if (!systemReady) return;
+
+    // ── DIAGNOSTIC: loop gap timing ──────────────────────────────────────
+    // Prints whenever a single loop iteration takes longer than the previous
+    // max — finds blocking calls that stall the async TCP server.
+    {
+        static uint32_t lastLoopMs   = 0;
+        static uint32_t maxLoopGapMs = 0;
+        uint32_t        nowMs        = millis();
+        if (lastLoopMs != 0) {
+            uint32_t gap = nowMs - lastLoopMs;
+            if (gap > maxLoopGapMs && gap > 20) {
+                maxLoopGapMs = gap;
+                Serial.printf("[LOOP] new max gap = %u ms\n", gap);
+            }
+        }
+        lastLoopMs = nowMs;
+    }
 
     Hardware::update();
     inputManager.update();
@@ -693,6 +800,9 @@ void loop() {
             // Stop SDO manager, run fetch, restart SDO manager
             FetchResult result = canManager.fetchParamsFromVCU();
 
+            // Invalidate param cache — table has been reloaded
+            invalidateParamCache();
+
             lvglSuspended = false;
             if (result == FetchResult::SUCCESS) {
                 uiManager.showFetchStatus("VCU params\nreloaded!");
@@ -708,17 +818,7 @@ void loop() {
         }
 
         // Keep SDO polling running in WiFi mode so spot values stay live
-        if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
-            lastParamRequestTime = millis();
-            CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
-            if (param) {
-                canManager.requestParameter(param->id);
-            }
-            uint16_t paramCount = canManager.getParameterCount();
-            if (paramCount > 0) {
-                currentParamIndex = (currentParamIndex + 1) % paramCount;
-            }
-        }
+        pollNextSDOParam();
 
         delay(10);
         return;
@@ -727,81 +827,59 @@ void loop() {
     // Normal mode: full CAN + LVGL update
     canManager.update();
 
+    // Resolve cached parameter pointers (no-op after first successful resolution)
+    refreshParamCache();
+
     // Trip logger — records one entry every 5s while speed > 10 RPM
-    {
-        CANParameter* spd  = canManager.getParameterByName("speed");
-        CANParameter* udc  = canManager.getParameterByName("udc");
-        CANParameter* idc  = canManager.getParameterByName("idc");
-        CANParameter* soc  = canManager.getParameterByName("SOC");
-        CANParameter* ths  = canManager.getParameterByName("tmphs");
-        CANParameter* tm   = canManager.getParameterByName("tmpm");
-        CANParameter* pwr  = canManager.getParameterByName("pwr");
-        CANParameter* pot  = canManager.getParameterByName("potnorm");
+    // Uses cached pointers — no linear searches here
+    TripLogger::getInstance().update(
+        g_pSpeed   ? g_pSpeed->getValueAsInt()              : 0,   // speed_rpm
+        g_pUdc     ? (int)(g_pUdc->getValueAsInt() * 10)   : 0,   // udc_dv  (V × 10)
+        g_pIdc     ? (int)(g_pIdc->getValueAsInt() * 10)   : 0,   // idc_da  (A × 10)
+        g_pPwr     ? (int)(g_pPwr->getValueAsInt() * 100)  : 0,   // pwr_dkw (kW × 100)
+        g_pSoc     ? g_pSoc->getValueAsInt()                : 0,   // soc_pct
+        g_pTmphs   ? g_pTmphs->getValueAsInt()              : 0,   // tmphs_c
+        g_pTmpm    ? g_pTmpm->getValueAsInt()               : 0,   // tmpm_c
+        g_pPotnorm ? g_pPotnorm->getValueAsInt()            : 0    // potnorm (0-1000)
+    );
 
-        TripLogger::getInstance().update(
-            spd  ? spd->getValueAsInt()              : 0,   // speed_rpm
-            udc  ? (int)(udc->getValueAsInt() * 10)  : 0,   // udc_dv  (V × 10)
-            idc  ? (int)(idc->getValueAsInt() * 10)  : 0,   // idc_da  (A × 10)
-            pwr  ? (int)(pwr->getValueAsInt() * 100) : 0,   // pwr_dkw (kW × 100)
-            soc  ? soc->getValueAsInt()              : 0,   // soc_pct
-            ths  ? ths->getValueAsInt()              : 0,   // tmphs_c
-            tm   ? tm->getValueAsInt()               : 0,   // tmpm_c
-            pot  ? pot->getValueAsInt()              : 0    // potnorm (0-1000)
-        );
-    }
+    // Opmode change detection — uses cached pointer, no linear search
+    if (g_pOpmode) {
+        uint8_t opmode = (uint8_t)g_pOpmode->getValueAsInt();
+        if (opmode != lastOpmode) {
+            FaultLogger::getInstance().logOpmodeChange(opmode);
 
-    // Opmode change detection — auto-switch screens and log transitions
-    {
-        CANParameter* p = canManager.getParameterByName("opmode");
-        if (p) {
-            uint8_t opmode = (uint8_t)p->getValueAsInt();
-            if (opmode != lastOpmode) {
-                FaultLogger::getInstance().logOpmodeChange(opmode);
-
-                if (opmode == 3) {
-                    // Entered charge mode
-                    EfficiencyTracker::getInstance().startChargeSession();
-                    uiManager.setScreen(SCREEN_CHARGING);
-                    Serial.println("[Main] Charge mode detected — switching to charging screen");
-                } else if (lastOpmode == 3) {
-                    // Left charge mode
-                    EfficiencyTracker::getInstance().endChargeSession();
-                    uiManager.setScreen(SCREEN_DASHBOARD);
-                    Serial.println("[Main] Charge mode ended — returning to dashboard");
-                }
-                lastOpmode = opmode;
+            if (opmode == 3) {
+                // Entered charge mode
+                EfficiencyTracker::getInstance().startChargeSession();
+                uiManager.setScreen(SCREEN_CHARGING);
+                Serial.println("[Main] Charge mode detected — switching to charging screen");
+            } else if (lastOpmode == 3) {
+                // Left charge mode
+                EfficiencyTracker::getInstance().endChargeSession();
+                uiManager.setScreen(SCREEN_DASHBOARD);
+                Serial.println("[Main] Charge mode ended — returning to dashboard");
             }
+            lastOpmode = opmode;
         }
     }
 
     // Health checker update — drives async SDO poll sequence
     HealthChecker::getInstance().update();
 
-    // Efficiency tracker — update once per second
+    // Efficiency tracker — uses cached pointers, updates once per second
     {
         static uint32_t lastEffUpdate = 0;
         if (millis() - lastEffUpdate >= 1000) {
             lastEffUpdate = millis();
-            CANParameter* pPwr = canManager.getParameterByName("pwr");
-            CANParameter* pSpd = canManager.getParameterByName("speed");
-            float powerW  = pPwr ? (float)pPwr->getValueAsInt() * 1000.0f : 0.0f;
-            int   speedRPM = pSpd ? pSpd->getValueAsInt() : 0;
+            float powerW   = g_pPwr   ? (float)g_pPwr->getValueAsInt() * 1000.0f : 0.0f;
+            int   speedRPM = g_pSpeed ? g_pSpeed->getValueAsInt() : 0;
             EfficiencyTracker::getInstance().update(powerW, speedRPM);
         }
     }
 
     // Round-robin SDO parameter polling
-    if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
-        lastParamRequestTime = millis();
-        CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
-        if (param) {
-            canManager.requestParameter(param->id);
-        }
-        uint16_t paramCount = canManager.getParameterCount();
-        if (paramCount > 0) {
-            currentParamIndex = (currentParamIndex + 1) % paramCount;
-        }
-    }
+    pollNextSDOParam();
 
     if (!lvglSuspended) {
         uiManager.update();

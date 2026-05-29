@@ -311,6 +311,38 @@
           <span id="immobSettingStatus" style="font-size:9pt; color:#aaa; margin-left:8px;"></span>
         </div>
 
+        <!-- ── PARAMETER AUTO-FETCH ────────────────────────────────────── -->
+        <div class="settings-section">
+          <h3>⚙️ Parameter Auto-Fetch</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            Automatically download the latest parameter list from the VCU via CAN on every boot.
+            Useful during tuning sessions when VCU parameters change frequently.
+            <strong>The dial will reboot after a successful fetch to ensure clean memory.</strong>
+          </p>
+          
+          <div style="background:#332200;border:1px solid #ff9800;border-radius:4px;padding:8px 12px;
+                      font-size:9pt;color:#ff9800;margin-bottom:14px;">
+            <strong>⚠ Tuning mode</strong><br>
+            Enable this only if you're actively tweaking VCU parameters.
+            Leave disabled for normal driving — params rarely change after initial setup.
+          </div>
+
+          <label style="display:flex;align-items:center;gap:12px;cursor:pointer;margin-bottom:14px;">
+            <input type="checkbox" id="fetchOnBoot" style="width:18px;height:18px;">
+            <span style="font-weight:600;">Fetch parameters from VCU on every boot</span>
+          </label>
+          
+          <p style="color:#666; font-size:9pt; margin-bottom:10px;">
+            When disabled, the dial loads parameters from cached SPIFFS storage.
+            You can still manually fetch via the UPDATE page "Refetch from VCU" button.
+          </p>
+
+          <button onclick="saveFetchSetting()">
+            Save Fetch Setting
+          </button>
+          <span id="fetchSettingStatus" style="font-size:9pt; color:#aaa; margin-left:8px;"></span>
+        </div>
+
         <!-- ── HEALTH CHECK ─────────────────────────────────────────── -->
         <div class="settings-section" id="healthSection">
           <h3>Pre-Drive Health Check</h3>
@@ -969,6 +1001,11 @@ function loadScreenAndImmobSettings() {
         var el = document.getElementById('immobReadId');
         if (el) el.placeholder = cfg.immobReadId;
       }
+      // Apply fetchOnBoot toggle
+      if (cfg.fetchOnBoot !== undefined) {
+        var cb = document.getElementById('fetchOnBoot');
+        if (cb) cb.checked = cfg.fetchOnBoot;
+      }
     })
     .catch(function() {});
 }
@@ -1038,6 +1075,38 @@ function saveImmobSetting() {
       showStatus(enabled
         ? '✓ Immobilizer enabled. Dial will require PIN on next boot.'
         : '✓ Immobilizer disabled. Dial will boot directly to Dashboard.',
+        'success');
+    } else {
+      st.textContent = '✗ Failed';
+      st.style.color = '#f44336';
+    }
+  })
+  .catch(function() {
+    st.textContent = '✗ Connection error';
+    st.style.color = '#f44336';
+  });
+}
+
+function saveFetchSetting() {
+  var enabled = document.getElementById('fetchOnBoot').checked;
+  var st = document.getElementById('fetchSettingStatus');
+  st.textContent = 'Saving...';
+  st.style.color = '#aaa';
+
+  var payload = { fetchOnBoot: enabled };
+
+  fetch('/dial-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(function(r) {
+    if (r.ok) {
+      st.textContent = '✓ Saved';
+      st.style.color = '#4CAF50';
+      showStatus(enabled
+        ? '✓ Auto-fetch enabled. VCU params will be fetched on every boot (with auto-reboot).'
+        : '✓ Auto-fetch disabled. Params will be loaded from cache.',
         'success');
     } else {
       st.textContent = '✗ Failed';

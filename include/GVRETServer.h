@@ -71,6 +71,7 @@ public:
     void pushFrame(uint32_t id, bool extended, const uint8_t* data, uint8_t dlc);
 
     bool hasClients() const { return _clientCount > 0; }
+    bool isRunning() const { return _running; }
 
 private:
     GVRETServer() : _server(GVRET_PORT), _clientCount(0), _lastFlush(0), _bufLen(0), _running(false) {}

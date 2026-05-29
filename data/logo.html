@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Splash Logo — ZombieVerter</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --border: #334155;
+    --text: #f1f5f9; --muted: #94a3b8;
+    --green: #22c55e; --red: #ef4444; --cyan: #06b6d4; --yellow: #eab308;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); min-height: 100vh;
+         display: flex; flex-direction: column; align-items: center;
+         padding: 2rem 1rem; }
+
+  h1 { color: var(--cyan); font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 12px; padding: 1.5rem; width: 100%; max-width: 500px;
+          margin-bottom: 1.25rem; }
+  .card h2 { font-size: 1rem; color: var(--cyan); margin-bottom: 1rem; }
+
+  .drop-zone {
+    border: 2px dashed var(--border); border-radius: 8px;
+    padding: 2rem; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s;
+    margin-bottom: 1rem;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--cyan); background: rgba(6,182,212,.05);
+  }
+  .drop-zone p { color: var(--muted); font-size: 0.9rem; }
+  .drop-zone .file-name { color: var(--cyan); margin-top: 0.5rem;
+                           font-size: 0.85rem; display: none; }
+  #fileInput { display: none; }
+
+  .preview-wrap { display: none; text-align: center; margin-bottom: 1rem; }
+  .preview-wrap canvas {
+    width: 180px; height: 180px; border-radius: 50%;
+    background: #000; border: 2px solid var(--border);
+    display: block; margin: 0 auto 0.5rem;
+  }
+  .preview-wrap .preview-label {
+    font-size: 0.8rem; color: var(--muted);
+  }
+
+  .progress-wrap { display: none; margin-bottom: 1rem; }
+  .progress-track { background: var(--border); border-radius: 6px;
+                    height: 12px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--cyan); width: 0%;
+                   transition: width .3s; border-radius: 6px; }
+  .progress-label { font-size: 0.8rem; color: var(--muted);
+                    margin-top: 4px; text-align: center; }
+
+  .status-box { padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.9rem;
+                display: none; margin-bottom: 1rem; }
+  .status-box.ok  { background: rgba(34,197,94,.15); color: var(--green);
+                    border: 1px solid var(--green); }
+  .status-box.err { background: rgba(239,68,68,.15); color: var(--red);
+                    border: 1px solid var(--red); }
+  .status-box.info { background: rgba(6,182,212,.1); color: var(--cyan);
+                     border: 1px solid var(--cyan); }
+
+  .btn { padding: 10px 24px; border-radius: 6px; border: none; cursor: pointer;
+         font-size: 0.9rem; font-weight: 600; transition: opacity .15s; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.primary { background: var(--cyan); color: #000; }
+  .btn.primary:hover:not(:disabled) { opacity: .85; }
+  .btn.danger { background: var(--red); color: #fff; }
+  .btn.danger:hover:not(:disabled) { opacity: .85; }
+  .btn.back { background: var(--border); color: var(--text); }
+  .btn.back:hover { opacity: .75; }
+
+  .warning { background: rgba(234,179,8,.1); border: 1px solid var(--yellow);
+             border-radius: 6px; padding: 0.75rem 1rem; font-size: 0.85rem;
+             color: #fde68a; margin-bottom: 1rem; }
+  .warning strong { display: block; margin-bottom: 4px; }
+
+  .info-list { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+  .info-list li { margin-left: 1.2rem; }
+
+  .reset-card .card h2 { color: var(--red); }
+
+  footer { margin-top: 2rem; color: var(--muted); font-size: 0.8rem; }
+  footer a { color: var(--cyan); text-decoration: none; }
+</style>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ZV Display">
+<meta name="theme-color" content="#00bcd4">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+</head>
+<body>
+
+<h1>⚡ ZombieVerter Dial Display</h1>
+<p class="sub">Splash Screen Logo</p>
+
+<!-- Logo Upload -->
+<div class="card">
+  <h2>🖼 Upload Custom Logo</h2>
+
+  <div class="warning">
+    <strong>📐 Image guidance:</strong>
+    Any PNG works — it's auto-scaled and letterboxed to fit the 240×240 round display.
+    For best results use a 240×240 square PNG. Non-square images get black bars.
+    Transparent backgrounds become black on the dial.
+  </div>
+
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <p>Drag &amp; drop a PNG here, or click to select</p>
+    <p class="file-name" id="fileName"></p>
+    <input type="file" id="fileInput" accept="image/png,.png">
+  </div>
+
+  <div class="preview-wrap" id="previewWrap">
+    <canvas id="previewCanvas" width="240" height="240"></canvas>
+    <p class="preview-label">Preview (how it will appear on the round display)</p>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <p class="progress-label" id="progressLabel">Uploading...</p>
+  </div>
+
+  <div class="status-box" id="uploadStatus"></div>
+
+  <button class="btn primary" id="uploadBtn" onclick="startUpload()" disabled>
+    ⬆ Upload Logo
+  </button>
+</div>
+
+<!-- Reset to default -->
+<div class="card reset-card">
+  <h2>🗑 Restore Default Splash</h2>
+  <p style="color:var(--muted);font-size:0.9rem;margin-bottom:1rem;">
+    Removes any custom logo from the device and restores the built-in default splash screen.
+  </p>
+  <button class="btn danger" id="resetBtn" onclick="resetLogo()">
+    🗑 Remove Custom Logo
+  </button>
+  <div class="status-box" id="resetStatus"></div>
+</div>
+
+<a href="/"><button class="btn back">← Back to Dashboard</button></a>
+
+<footer>ZombieVerter Dial Display &nbsp;·&nbsp; <a href="https://github.com/robertwa1974/Zombieverter-Dial-Display">GitHub</a></footer>
+
+<script>
+// ============================================================================
+// File selection + preview
+// ============================================================================
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const canvas     = document.getElementById('previewCanvas');
+const ctx        = canvas.getContext('2d');
+let selectedFile = null;
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) selectFile(f);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) selectFile(fileInput.files[0]);
+});
+
+function selectFile(f) {
+  if (!f.type.includes('png') && !f.name.toLowerCase().endsWith('.png')) {
+    showStatus('uploadStatus', 'err', 'Please select a PNG file');
+    return;
+  }
+  selectedFile = f;
+  document.getElementById('fileName').textContent =
+    `${f.name} (${(f.size/1024).toFixed(1)} KB)`;
+  document.getElementById('fileName').style.display = 'block';
+  document.getElementById('uploadBtn').disabled = false;
+  hideStatus('uploadStatus');
+  renderPreview(f);
+}
+
+function renderPreview(file) {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    // Mirror the device's letterbox math: fit inside 240x240, preserve aspect
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 240, 240);
+    const scale = Math.min(240 / img.width, 240 / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const x = (240 - w) / 2;
+    const y = (240 - h) / 2;
+    ctx.drawImage(img, x, y, w, h);
+    URL.revokeObjectURL(url);
+    document.getElementById('previewWrap').style.display = 'block';
+  };
+  img.onerror = () => {
+    showStatus('uploadStatus', 'err', 'Could not read PNG — file may be corrupt');
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
+// ============================================================================
+// Upload
+// ============================================================================
+function startUpload() {
+  if (!selectedFile) return;
+  if (!confirm(`Upload ${selectedFile.name} as the new splash logo?`)) return;
+
+  const formData = new FormData();
+  formData.append('logo', selectedFile, selectedFile.name);
+
+  document.getElementById('uploadBtn').disabled = true;
+  document.getElementById('resetBtn').disabled  = true;
+  document.getElementById('progressWrap').style.display = 'block';
+  document.getElementById('progressFill').style.width = '0%';
+  document.getElementById('progressLabel').textContent = 'Uploading...';
+  showStatus('uploadStatus', 'info', 'Uploading PNG to device...');
+
+  const xhr = new XMLHttpRequest();
+
+  xhr.upload.addEventListener('progress', e => {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      document.getElementById('progressFill').style.width = pct + '%';
+      document.getElementById('progressLabel').textContent =
+        `${pct}% — ${(e.loaded/1024).toFixed(0)} / ${(e.total/1024).toFixed(0)} KB`;
+    }
+  });
+
+  xhr.addEventListener('load', () => {
+    if (xhr.status === 200) {
+      document.getElementById('progressFill').style.width = '100%';
+      document.getElementById('progressLabel').textContent = 'Uploaded — decoding on device...';
+      showStatus('uploadStatus', 'info',
+        'Upload buffered. Decoding PNG on device — this can take 5–15 seconds...');
+      pollStatus();
+    } else {
+      showStatus('uploadStatus', 'err', `Upload failed: ${xhr.responseText || xhr.status}`);
+      document.getElementById('uploadBtn').disabled = false;
+      document.getElementById('resetBtn').disabled  = false;
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    showStatus('uploadStatus', 'err', 'Connection lost during upload');
+    document.getElementById('uploadBtn').disabled = false;
+    document.getElementById('resetBtn').disabled  = false;
+  });
+
+  xhr.open('POST', '/upload-logo');
+  xhr.send(formData);
+}
+
+// ----------------------------------------------------------------------------
+// Poll /logo-status until decode finishes (pending → decoding → ok | failed)
+// ----------------------------------------------------------------------------
+function pollStatus() {
+  let tries = 0;
+  const maxTries = 60;  // 30 seconds at 500ms
+
+  const tick = () => {
+    tries++;
+    fetch('/logo-status')
+      .then(r => r.json())
+      .then(data => {
+        const state = data.state || 'unknown';
+        if (state === 'ok') {
+          showStatus('uploadStatus', 'ok',
+            '✓ Logo installed! It will appear on the next dial reboot.');
+          document.getElementById('progressLabel').textContent = 'Complete';
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('resetBtn').disabled  = false;
+        } else if (state === 'failed') {
+          showStatus('uploadStatus', 'err',
+            '✗ Decode failed on device. The PNG may be corrupt, too large, or in an unsupported format.');
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('resetBtn').disabled  = false;
+        } else if (tries >= maxTries) {
+          showStatus('uploadStatus', 'err',
+            'Timed out waiting for decode to finish. Check the dial serial console for details.');
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('resetBtn').disabled  = false;
+        } else {
+          // pending or decoding — keep polling
+          document.getElementById('progressLabel').textContent =
+            state === 'decoding' ? 'Decoding on device...' : 'Waiting for decode...';
+          setTimeout(tick, 500);
+        }
+      })
+      .catch(() => {
+        if (tries >= maxTries) {
+          showStatus('uploadStatus', 'err', 'Could not reach device');
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('resetBtn').disabled  = false;
+        } else {
+          setTimeout(tick, 500);
+        }
+      });
+  };
+  setTimeout(tick, 500);
+}
+
+// ============================================================================
+// Reset to default
+// ============================================================================
+function resetLogo() {
+  if (!confirm('Remove the custom logo and restore the default splash?')) return;
+
+  const btn = document.getElementById('resetBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Removing...';
+  showStatus('resetStatus', 'info', 'Removing custom logo...');
+
+  fetch('/delete-logo', { method: 'DELETE' })
+    .then(r => {
+      if (r.ok) {
+        showStatus('resetStatus', 'ok',
+          '✓ Custom logo removed. Default splash will appear on next reboot.');
+      } else {
+        showStatus('resetStatus', 'err', `Reset failed: HTTP ${r.status}`);
+      }
+    })
+    .catch(() => {
+      showStatus('resetStatus', 'err', 'Could not reach device');
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '🗑 Remove Custom Logo';
+    });
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+function showStatus(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = 'status-box ' + type;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideStatus(id) {
+  document.getElementById(id).style.display = 'none';
+}
+</script>
+
+<script>
+let wakeLock = null;
+async function requestWakeLock() {
+  if ('wakeLock' in navigator) {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+  }
+}
+async function releaseWakeLock() {
+  if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') requestWakeLock();
+  else releaseWakeLock();
+});
+requestWakeLock();
+</script>
+</body>
+</html>
