@@ -17,8 +17,8 @@
 #include "SDOManager.h"
 
 // ── Firmware version strings — update on each release ────────────────────────
-#define DIAL_FW_VERSION   "v2.5.1"   // M5Dial firmware version
-#define UI_VERSION        "v2.5.1"   // Web UI version (ui.js / index.html)
+#define DIAL_FW_VERSION   "v2.5.2"   // M5Dial firmware version
+#define UI_VERSION        "v2.5.2"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
@@ -820,7 +820,11 @@ void loop() {
         // Keep SDO polling running in WiFi mode so spot values stay live
         pollNextSDOParam();
 
-        delay(10);
+        // Yield to FreeRTOS scheduler so the async_tcp task gets CPU time.
+        // delay() on the Arduino loop task does NOT properly yield on ESP32 —
+        // it busy-waits and starves the TCP stack during parallel browser
+        // connection setup, causing ERR_EMPTY_RESPONSE on page load.
+        vTaskDelay(pdMS_TO_TICKS(5));
         return;
     }
 

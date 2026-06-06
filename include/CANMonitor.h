@@ -54,6 +54,10 @@ public:
     // Register WebSocket + HTTP endpoints on the async server
     void registerEndpoints(AsyncWebServer* server);
 
+    // Call from WiFiManager::update() every loop — runs WS cleanup even when
+    // no CAN frames are arriving (bench mode, quiet bus, idle AP).
+    void update();
+
     // Called by CANData::update() for every received frame
     void pushFrame(const twai_message_t& msg);
 

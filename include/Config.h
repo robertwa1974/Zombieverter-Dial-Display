@@ -72,7 +72,7 @@
 #define PARAM_UPDATE_INTERVAL_MS  100
 
 // Debug
-#define DEBUG_SERIAL        true
+#define DEBUG_SERIAL        false
 #define DEBUG_CAN           false  // Enable to see CAN messages
 #define DEBUG_SDO           false  // Enable to see SDO TX/RX traffic (very chatty)
 #define DEBUG_TOUCH         false

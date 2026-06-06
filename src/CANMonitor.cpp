@@ -54,7 +54,8 @@ void CANMonitor::init(CANDataManager* mgr) {
 // =============================================================================
 
 void CANMonitor::registerEndpoints(AsyncWebServer* server) {
-    // WebSocket — allow up to 2 clients, ping every 10s to detect dead connections
+    // WebSocket — cleanupClients() in update() reclaims stale connections
+    // proactively so reload after browser close doesn't hang.
     ws = new AsyncWebSocket("/ws/can");
     ws->onEvent(onWsEvent);
     ws->enable(true);
@@ -80,6 +81,22 @@ void CANMonitor::registerEndpoints(AsyncWebServer* server) {
 }
 
 // =============================================================================
+// update — call from WiFiManager::update() every loop iteration
+// Runs WebSocket cleanup unconditionally so stale connections from a closed
+// browser are reclaimed even when no CAN frames are arriving (bench / idle AP).
+// =============================================================================
+
+void CANMonitor::update() {
+    if (!ws) return;
+    static uint32_t lastCleanup = 0;
+    uint32_t now = millis();
+    if (now - lastCleanup >= 1000) {
+        ws->cleanupClients();
+        lastCleanup = now;
+    }
+}
+
+// =============================================================================
 // pushFrame — called from CANData::update() for every received frame
 // =============================================================================
 
@@ -89,13 +106,6 @@ void CANMonitor::pushFrame(const twai_message_t& msg) {
     f.id        = msg.identifier;
     f.len       = msg.data_length_code;
     memcpy(f.data, msg.data, 8);
-
-    // Periodic WebSocket cleanup — prevents stale connections piling up
-    static uint32_t lastCleanup = 0;
-    if (ws && millis() - lastCleanup > 2000) {
-        ws->cleanupClients();
-        lastCleanup = millis();
-    }
 
     // Update per-ID statistics (always, regardless of active state)
     updateIDStat(f.id);

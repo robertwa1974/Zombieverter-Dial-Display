@@ -47,20 +47,23 @@ void InputManager::update() {
     int32_t rawPosition = encoder.getCount();
     int32_t currentPosition = rawPosition / 4;  // Divide by 4 to get actual detent clicks
     
-    // Debug every 2 seconds (not 500ms)
+    #if DEBUG_SERIAL
     static uint32_t lastDebugTime = 0;
     if (millis() - lastDebugTime > 2000) {
         Serial.printf("[ENC] raw=%d divided=%d last=%d\n", rawPosition, currentPosition, lastEncoderPosition);
         lastDebugTime = millis();
     }
+    #endif
     
     if (currentPosition != lastEncoderPosition) {
         int32_t delta = currentPosition - lastEncoderPosition;
         lastEncoderPosition = currentPosition;
         
+        #if DEBUG_SERIAL
         Serial.println("========================================");
         Serial.printf("ENCODER ROTATED: raw_delta=%d, actual_delta=%d\n", rawPosition, delta);
         Serial.println("========================================");
+        #endif
         
         InputEvent event;
         event.type = (delta > 0) ? INPUT_ENCODER_CW : INPUT_ENCODER_CCW;

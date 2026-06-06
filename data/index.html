@@ -21,7 +21,7 @@
  *
 -->
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-<title>Huebner Inverter Management Console</title>
+<title>ZombieVerter Dial Display</title>
 <link href="style.css" rel="stylesheet" type="text/css" />
 <script src="chart.min.js" type="text/javascript"></script>
 <script src="modal.js" type="text/javascript"></script>
@@ -66,58 +66,9 @@
 		</div>
 
 		<div id="communication-error-bar" class="communication-error-bar">
-			<p>Communication problem between ESP and STM</p>
+			<p>Communication problem — check VCU CAN connection</p>
 		</div>
 
-		<!-- 'Add CAN Mapping' modal -->
-		<div id="can-mapping-modal-overlay" class="modal-overlay">
-			<div id="can-mapping-modal-container" class="can-mapping-modal-container">
-				<span class="modal-close" onclick="modal.hideModal('can-mapping');">&times;</span>
-				<h3 class="underline">New CAN Mapping</h3>
-				<table id="can-mapping-table">
-					<tr>
-						<td>Transmit or receive</td>
-						<td>
-							<select id="txrx">
-								<option value="tx">Transmit</option>
-								<option value="rx">Receive</option>
-							</select>
-						</td>
-						<td>Choose transmit to take values/parameters from your OpenInverter board and send them out in frames on the CAN bus where they can be seen by other devices. Choose receive to set values based on data seen on the CAN bus.</td>
-					</tr>
-					<tr>
-						<td>Parameter</td>
-						<td>
-							<select id="add-can-mapping-spot-value-drop-down"></select>
-						</td>
-						<td>Select the spot value/parameter to transmit or receive.</td>
-					</tr>
-					<tr>
-						<td>CAN ID</td>
-						<td><input type="number" step="1" min="0" max="2047" id="canid"></td>
-						<td>Set the ID of the CAN frame to send/receive</td>
-					</tr>
-					<tr>
-						<td>Offset</td>
-						<td><input type="number" step="1" min="0" max="63" id="canpos"></td>
-						<td>Specify the position (offset) within the frame to place (transmit) or find (receive) this value</td>
-					</tr>
-					<tr>
-						<td>Length</td>
-						<td><input type="number" step="1" min="1" max="32" id="canbits"></td>
-						<td>Specify the length of this field in bits</td>
-					</tr>
-					<tr>
-						<td>Gain</td>
-						<td><input type="number" step="1" min="1" max="100" id="cangain"></td>
-						<td>Specify a gain to scale the value up or down</td>
-					</tr>
-				</table>
-				<button onclick="ui.canMapping();">
-					<!-- /icon-check-circle.png -->
-					<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAbBJREFUSInF1c1KVVEUwPFfUd6i7xtlIRWFFUIPYGAQd9QbNFOIEh8hBJv4NhE0CBQHQV80CEu0oiwqm9kosaAmchqcped027d7j95oweIc1sd/7c1ea2/+s9Qxhnv4hLXQpbCN4uBmwDVMYhVZG13GzirwM5gvAaYxgn7swPb4H8EU7mJbKf8oZvE4BT+NzwF+i8EqKwv4y8h/1uysYS6cD7G3IvwIFiL/DY41B0yGcxH7ug0/rDjQi1uEH08FjSkOtOtw8p7OMPwv4PAxAs8mfPfxNIAp+Cv0NuXcCd2QnxHckygwG76FAJfhrxNwihnakB9hqCWCewO0XqQdfE/4v5eNS2E8l0hoLvI3OJyPmA/kYy9WResW/YIGXoQ2wpaSofg+LxtHo+pMi6Qq8iBYN8rGumLQhv7M6VguB+OrxFUzEc73OLAJ+CG8C8Z4KmCXoiUfVSxSx5PInZNud3BK0VGLuNQBvCHfdSa/6vvaJZxQXNuZfJKvYwC75U/kAK4pDjST774tfF16cAsrJUArXcVN6SH97alLyX5cxRVcwEn51K/EimdwG986XXnX5ReKvJKLP0fJ2wAAAABJRU5ErkJggg==">Save CAN mapping</button>
-			</div>
-		</div>
 
 		<aside id="navbar" class="navbar">
 
@@ -148,18 +99,12 @@
 				<a class="tablink" onclick="ui.openPage('logger', this, 'white')">
 					<!-- /icon-database.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAATRJREFUSInt1c8uA1EUx/FPu2tIEyxIPAWbFpu+BPFI+iQkvIFKLEi7Ys+akCgbutNazB25UzNtaoqNX3IyMyc358893zuXH1alwL+OHWxhEytYCgYvwfq4QhcXuJ+WsIkzDDGa0YbooFHUwR4OUcUbzkNlXTxEVYu6WQtdNtHCIt6xj5Px6gehkgPUp7WaozraIcYgdVajBbWoq6LZTFIlileLnalG0Xu8RT2Tt6gp2aYWFsYSZpQOq+P7Qz6Nvgs7qEgw3Q62IcF0WRbTZzzhOnR6KcE0jpPbQVll4lQnLJyL/iRBW7lzkFERpq8STHuSAT7Kx3TV15OcF/szQVlMO2bANP2bTsK0L4vpnX9MyyS4Dc95YHqTOuNB7OIoJC2D6VBy4RznVdHwg1dmrDKY/q4+ACxLm8QEJ1UnAAAAAElFTkSuQmCC"><p class="navbar-text">DATA LOGGER</p></a>
-				<a class="tablink" onclick="ui.openPage('canmapping', this, 'white')">
-					<!-- /icon-repeat.png -->
-					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAANlJREFUSInNlUsKwjAQhj/EA0jBoocReqkiiFcThboSV7rwHD4Wuih1kQloSUqe6AeBLmb+fzKdaSGeBjgCZQItIwegA865TKbASUwuwPznJhWwBR6SEHLuNvE10EYIDxpUIv4EamAydM0e/RbNTEE7Cag9hJ3FQV2rw69y8BhT3T9fnBct1GCQ8cfzPrV4Lho52fhq9cgSVKJeXJZKStTIdagR9KGQvKstwHlpLCwld5NavBDxF+pzszAF6U2OOS2wslURY3BDtcVYueb//kyhxIypl0mSRXsDL+eEkxJwUCAAAAAASUVORK5CYII="><p class="navbar-text">CAN MAPPING</p></a>
 				<a class="tablink" onclick="ui.openPage('wifi', this, 'white')">
 					<!-- /icon-wifi.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAVdJREFUSInt1L9KXEEYBfDf2ogsBhTR7FpIYq2WEtIFspV2koBo8A2CIija+Ao+gJWEkKQQBZUETRM2L2AvWPkvASURFHXXYmfZRd27dy9IUnjgNPebc74z880dHvGvkYqoteEVcuhDVyAc4BA7+IbvOInbdACfcIViTF7hI/qjjLNYRSGIzrGFGbzEc6QDe8O3WWzjImgKWEHmtvlr7IdFf7CI7rhbRicWlI6piGMMlYvjVanXw+Kk6MKGym7GYQynmHR36Bm8xxp28Rdn2AtG0+i5pUlhKniO1UryFEsqZxvFS3y4p1FNDONI5XZ8CUl6lQbcgmd4i+WqECcYjdOgPKjNYFQP3fgcNNdorid4g3eif8L7MIKJBjWgFXPI41dgHvN4ksSwGoPBsNaAf+NFlEFTnQYZtCu9Nzl0BObwVem9yiaOH5BOWPs/8QM/GxHUm8EjHh43i7Jhzxg3JD0AAAAASUVORK5CYII="><p class="navbar-text">WIFI SETTINGS</p></a>
 				<a class="tablink" onclick="ui.openPage('files', this, 'white')">
 					<!-- /icon-file-text.png -->
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAK5JREFUSIljYKAzYGdgYOhmYGB4xsDA8J8A/srAwCBGqgWdRBiMjC+TagnM5VYE1JFtCUwTseouQenrDAwMkrSwQJRUS0i1gIFUS0i1ABv+TIoFh5HEDuMQx4bhgIUI12IDtngciBcQG0RE62eiwDCiACELCIU1etyQbAHVwWgckGwB1cHQj4PnUNqaDLNgxcczfIo6GEirMrHhdnwWsEEteUqGwU+hhrMR6WPqAAAbTIrOKieWjwAAAABJRU5ErkJggg=="><p class="navbar-text">FILES</p></a>
-				<a class="tablink" onclick="ui.openPage('support', this, 'white')">
-					<!-- /icon-help-circle.png -->
-					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAdRJREFUSInF1T1rlEEUBeBHYpHFJZDFQkhqsxELwdrPwlLtLP0g+heU+Ee0sLIViRYWJgGjEFBT6ppEsDGFNsYQLSUWc4d9s072fSOIB6Y598y5l7kzd/jHOFAT7+AyLqKLyeA3sIqnmMO3/SZuYRZb2KlZ30Pbamo+iZWKwXPMYAqHYnVxE/MV3QommphvxIY1nG5Q0Bmsx56NYUlalcpfYLyBecY4lmLvG4yWRLP6lQ+an8Az/MBXPCxU2sHH8LgzaN7Rb+jgsZzET3829wuODGjP6jd+V5E39Bs6iNzIBxiT+rQQ3L2CPseuVcm5IGcKGx6hJ92ejOOhf1fQ34rY4yq5FuRUYUMJF4Yk6EZstUpuB9muMR6RjjPr7xY07Yht7zfBSFScm3w/uEGMRXyrSjY5opyghyv2nmO7juhgkD0cxalIVsIvqbl1yNf8fZW8HlnnGxjUYTG8rlbJjvQ4dqTZshdeYXlI/Hx4bCqMmjwqPuHwXySojorbJcEo3oZgqVTBEHTwUs2wIw2wPK7XpdlSh3P6lX/W4E+YiCryfV+Qnv+09E7aOBbcYkX3uol5xqg0cnPjh61N6cyLx1L36Y/jkvTpT9v96X+QPv0nkeT/4DdxyppwcyvRBAAAAABJRU5ErkJggg=="><p class="navbar-text">SUPPORT</p></a>
 				<a class="tablink" href="/can.html" target="_blank">
 					<img class="navimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAANdJREFUSIntlbEKwjAQhr+oeaAOPoKLOGmHUnTqQ/Qubl30CfQRfAFfwME3cBRBKC4KgmKhkEM6lNA0NrG5wV2W/8Llu0sChPTWBQqggFO4KzfRK/AGNEBFJqsJuAMX4CobRJ+BHqiABbDOFWwB1NImQCW1y2wBrIGrWzk3oDcDrNPMoiWAFXACVqzSbZR0TGHqLVMHLCDthVgLbQpPQA+ewN7pAFwt0vAFPAFQIwVqxPqU/L7YAAAAABJRU5ErkJggg==">
 					<p class="navbar-text">CAN MONITOR</p>
@@ -208,13 +153,7 @@
 
 					<div class="main-right">
 						<h3 class="underline">Actions</h3>
-						<button onclick="ui.sendCmd('start 2');">
-							<!-- /icon-play.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAL9JREFUSInd1aGqQkEQxvGfx2C6xWC22ExWn0DMvoKv4CvYTb6CT2AURGy33CfQeMMNgkFBjsE9cDDdsIPoB8syO8P8YXdnhk/UFj8YRgHKtG5Y4CsKcEn7EeMIQB/7mr1CJycACkxxSmd/yW7kAlTqYl3zbdDLCag0wW/ynzFDMycA2ljW4r4xyAmoNMIhxV4xRysngEeNLDxqpsTuOaD4Z6KsevkVhT5y2DftCiq00FYR3uzC23XYwAkfme+lO+/CXqyEUBhOAAAAAElFTkSuQmCC">Start inverter in manual mode</button>
-						<button onclick="ui.sendCmd('stop');">
-							<!-- icon-square.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAHNJREFUSIntlTEOgCAMRV8c5E7i/RTuCR5DB8ugaRwogxp+0nRo8h5h+fCnOCACGdgrJwMBGDVBNIDvs2qC8vKp7gMA8MJI2rHYrblwhgbAx3RBF3RBF7xNsMn2Bt4sO2vHQLvCWTSBE0kygBNnm6mV+c0cZy9SUXHYiZQAAAAASUVORK5CYII=">Stop inverter</button>
-						
+
 						<!-- GVRET SavvyCAN Bridge -->
 						<hr style="margin:16px 0; border:0; border-top:1px solid #2d3436;">
 						<button id="gvretBtn" onclick="toggleGVRET();" style="background:#6c5ce7;">
@@ -250,53 +189,31 @@
 					</div>
 				</div>
 
-				<!-- UPDATE -->
+					<!-- UPDATE -->
 				<div id="update" class="tabdiv main-content">
 
 					<div class="main-right">
 
 						<h3 class="underline">Firmware</h3>
 
-						<!-- Install firmware from file -->
-						<form id="upload-firmware-form" enctype="multipart/form-data" action="edit" method="POST">
-							<input id="update-firmware-file" name="update-firmware-file" type="file" onchange="ui.uploadFirmwareFile();" hidden />
-							<label class="butt" for="update-firmware-file">
-							<!-- /icon-upload.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAKdJREFUSIntlEEKgzAQAAcP/YHSvkX8nrbv8iae9OAL1Af4AHtZIUbFGNeL7cISyIaZsFkCvxQRMEhGV8BrYJSsNSU2XFUSApUAGwNu7r204E9DYNe8JAXLVkwCmLeu8BHkQMm8z6ZgkpRyViVswW4EWua/QEWQozMNmxyXCXG5xCbn8Ai6CO71yL2s8QleImu3Vnyz/PN9M10TPIAP0J4At0AmrJvEF5W8XDFZxlMrAAAAAElFTkSuQmCC">Install firmware from file</label>
-						</form>
-
-						<!-- OTA firmware update -->
-						<a href="#" class="beta-feature" onclick="ui.showOTAUpdateFirmwareModal();"><button>
-							<!-- /icon-upload-cloud.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAYJJREFUSInd1EFLFVEYxvEfKCIK4i2EIEERopAWSbQoCty0dOGm1m7rKwgVuGovtNJFy6B1i0KiVlEgBVGfwJKiFC1ayG0x73CP02XmzG3nA4e55z3/eZ45M++5nFRdxwa28Qvf8BHrWPwf41lsodswnuFcW/Or2A+DL3iABYxjEpdxT7Gbblyv5Jqfx/e48Qk6NewpPA32J2ZyAl4k5kMZ/FAS8rwJvhngruJV5Oo0vsa91+rARwGttjAvtab34Q/xDncxnEKfA7g0QMC0YufVLnuPMyX0I4oTAwSkGseS4rx08Qaj8DsKYw0G8ziKMV/DdfApPFfgQ0wWGszLB+nG77qQ28G9gs2Y3M80zwmZCmYHbiST6gG7kJj/qZiXtX7N0dE7iOBlFB5XwIPK05YB6a4O+gQsx9pWWZjFnuLgpNpT9Hf5KsoAUTsMJtWkXuvfSRfmYtQpDeini3od9Fbe306rgIexvo2zbc1zAjq4hZFBzHMC/tFwM3JMr1vyJ0B/AfsvhI9sESZHAAAAAElFTkSuQmCC">Over the air firmware update</button></a>
-
-						<h3 class="underline">Web Interface</h3>
-
 						<!-- upload file -->
 						<form id="uploadform" enctype="multipart/form-data" action="edit" method="POST">
 							<input id="updatefile" name="updatefile" type="file" onchange="ui.uploadFile();" hidden />
 							<!-- /icon-upload.png -->
-							<label class="butt" for="updatefile"><img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAKdJREFUSIntlEEKgzAQAAcP/YHSvkX8nrbv8iae9OAL1Af4AHtZIUbFGNeL7cISyIaZsFkCvxQRMEhGV8BrYJSsNSU2XFUSApUAGwNu7r204E9DYNe8JAXLVkwCmLeu8BHkQMm8z6ZgkpRyViVswW4EWua/QEWQozMNmxyXCXG5xCbn8Ai6CO71yL2s8QleImu3Vnyz/PN9M10TPIAP0J4At0AmrJvEF5W8XDFZxlMrAAAAAElFTkSuQmCC">Upload file</label>
+							<label class="butt" for="updatefile"><img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAKdJREFUSIntlEEKgzAQAAcP/YHSvkX8nrbv8iae9OAL1Af4AHtZIUbFGNeL7cISyIaZsFkCvxQRMEhGV8BrYJSsNSU2XFUSApUAGwNu7r204E9DYNe8JAXLVkwCmLeu8BHkQMm8z6ZgkpRyViVswW4EWua/QEWQozMNmxyXCXG5xCbn8Ai6CO71yL2s8QleImu3Vnyz/PN9M10TPIAP0J4At0AmrJvEF5W8XDFZxlMrAAAAAElFTkSuQmCC">Upload web file</label>
 						</form>
 
 					</div>
 
 					<div class="main-left">
-						<h2 id="update">Update</h2>
-						<p>On this page you can apply software updates to your OpenInverter system. There are several distinct pieces of software which go to make up an OpenInverter system and each has a separate update mechanism.</p>
+						<h2>Update</h2>
+						<p>Use the dedicated <a href="/ota.html" target="_blank">OTA Update page</a> to flash new firmware to the M5Dial. Firmware files are <code>.bin</code> files built with PlatformIO.</p>
 
-						<h3>OpenInverter Board Bootloader</h3>
-						<p>Use the stm32_loader.bin file to update the bootloader on your OpenInverter board. You can find download links in the forum <a href="https://openinverter.org/forum/viewforum.php?f=7">here</a>.
+						<h3>Web Interface Files</h3>
+						<p>Individual web UI files (HTML, JS, CSS) can be uploaded here. Use "Upload web file" on the right to replace a file in SPIFFS without reflashing the full filesystem.</p>
 
-						<h3>OpenInverter Board Firmware</h3>
-						<p>To install a new firmware on your OpenInverter board click on the 'Install firmware from file' button on the right. Use the stm32_sine.bin file to install the sine firmware or use the stm32_foc.bin file to install the FOC firmware. You can find information about the latest available releases, including download links, on the OpenInverter forum <a href="https://openinverter.org/forum/viewforum.php?f=7&sid=cdb63cfa1d2f7ab493e7079fc13a8e65">here</a>.</p>
-
-						<h3>Web Interface Firmware</h3>
-						<p>The ESP8266 firmware can be upgraded with platformio via OTA i.e. directly via wifi without programming cable, see <a href="https://openinverter.org/forum/viewtopic.php?p=60907#p60907">forum</a>.<br>
-You can also program with a cable, see <a href="https://openinverter.org/forum/viewtopic.php?f=5&t=8">here</a> for more details.</p>
-
-						<h3>Web Interface Application</h3>
-						<p>You can apply updates to this web interface by uploading individual files. More information about updating the web interface can be found in its github repository <a href="https://github.com/jsphuebner/esp8266-web-interface">here</a>.</p>
+						<h3>Full Filesystem Update</h3>
+						<p>To update all web files at once, run <code>pio run -e m5stack-dial --target uploadfs</code> from PlatformIO. See the <a href="https://github.com/robertwa1974/Zombieverter-Dial-Display" target="_blank">GitHub repository</a> for build instructions.</p>
 					</div>
 
 				</div>
@@ -338,31 +255,7 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 							<label class="butt" for="paramfile"><img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAK5JREFUSIljYKAzYGdgYOhmYGB4xsDA8J8A/srAwCBGqgWdRBiMjC+TagnM5VYE1JFtCUwTseouQenrDAwMkrSwQJRUS0i1gIFUS0i1ABv+TIoFh5HEDuMQx4bhgIUI12IDtngciBcQG0RE62eiwDCiACELCIU1etyQbAHVwWgckGwB1cHQj4PnUNqaDLNgxcczfIo6GEirMrHhdnwWsEEteUqGwU+hhrMR6WPqAAAbTIrOKieWjwAAAABJRU5ErkJggg==">Load parameters from file</label>
 						</form>
 
-						<h3 class="underline">Parameter Database</h3>
-
-						<!-- Submit params to OI -->
-						<form id="paramdb" action="https://openinverter.org/parameters/api.php" method="POST" enctype="multipart/form-data">
-							<input type="text" style="display: none;" id="parameters_json" name="data"></input>
-							<input type="hidden" id="parameters_token" name="token" />
-							<button type="button" onclick="ui.parameterSubmit();">
-								<!-- /icon-upload-cloud.png -->
-								<image class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAYJJREFUSInd1EFLFVEYxvEfKCIK4i2EIEERopAWSbQoCty0dOGm1m7rKwgVuGovtNJFy6B1i0KiVlEgBVGfwJKiFC1ayG0x73CP02XmzG3nA4e55z3/eZ45M++5nFRdxwa28Qvf8BHrWPwf41lsodswnuFcW/Or2A+DL3iABYxjEpdxT7Gbblyv5Jqfx/e48Qk6NewpPA32J2ZyAl4k5kMZ/FAS8rwJvhngruJV5Oo0vsa91+rARwGttjAvtab34Q/xDncxnEKfA7g0QMC0YufVLnuPMyX0I4oTAwSkGseS4rx08Qaj8DsKYw0G8ziKMV/DdfApPFfgQ0wWGszLB+nG77qQ28G9gs2Y3M80zwmZCmYHbiST6gG7kJj/qZiXtX7N0dE7iOBlFB5XwIPK05YB6a4O+gQsx9pWWZjFnuLgpNpT9Hf5KsoAUTsMJtWkXuvfSRfmYtQpDeini3od9Fbe306rgIexvo2zbc1zAjq4hZFBzHMC/tFwM3JMr1vyJ0B/AfsvhI9sESZHAAAAAElFTkSuQmCC">Submit parameters to OpenInverter</button>
-						</form>
-
-						<!-- Subscribe to param set -->
-						<button onclick="ui.showSubscribeModal();">
-							<!-- /icon-download-cloud.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAYhJREFUSInd1bFqFVEQBuDPhKAkIknAxSJFxEJIYUhjIYiFheXFwheQNHkFQSsfQksLRdA3kAThFsJFLQxGsQ8RQUwIBLu12DnZ48XcPdcoiD8My875559zZs7s8j/iBK7hEd7jO/bwEQ9w/TjiF9BH3WEvcHFc8avYD4Ft3MMlnMJpLOMuvgTnKy6Xii/hWwQ+wewI7iyeBXcPiyUJXkbAU0wU8CfxPGLWu8g3gvgZZ0p2E5iPmBpXRhEfBunOGOIJ97WNP8BbrGEqJ30KwvJvJFjQNj23d6gSKTV3nPL8CtPoYSv03oiTHIRjukCkHzYK85qhrHEbNuNlpSBBKkEXbgWvP4HX4ewVBJZiI55LNBNcYwdzHYGlJ5jTTjvaQXv8hxLcDN6r5FjErmZwcvQ1JUxXLk9Qxdpw0yttk1fzhfNhOQZB3IzAlKDSXo5Bxp/K/IfXdBTOaoamxgc/D1Lyncv4M5oqDHT38xD5bnNLpxrGSc3HcCwMJzlK/FioND+k/b8h/u/iB+S1fKXC8i/kAAAAAElFTkSuQmCC">Subscribe to parameter set</button>
-
-						<button onclick="ui.parameterDatabaseShowUnsubscribeDialog();">
-							<!-- /icon-x-square.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAMNJREFUSIndlU0KwjAQRp8u7AksehXr/bS9VnfiSqGCrhOPURdOoOpEzA+o/SAkzDTvC5nQgTGpABrAAn3ksEANzDSDJgH8PLaagTv5Ku4CAKiEYbSkc0/VA2eaAfhWP2HQAnugHMRKibUhZr4a7CR+FHAp615yn3K8iTlwkNwZ6GR9AhY5DJxJN/jm4oG/cFKKPAndEHNFywDO94oc+kyjihyiEf8qrjJXCby1zFZL1uRrOBvNoBATkwA23LuZ2jL/UzfDRo5pCPZ1fQAAAABJRU5ErkJggg==">Stop subscription</button>
-
 						<h3 class="underline">Misc</h3>
-
-						<a href="/syncofs.html" target="_blank">
-							<!-- /icon-search.png -->
-							<button><img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAVtJREFUSInd1MsubEEUBuAPQxoTEmO3oVuc2SFxGZp6GrwEE7yB8AhCWkzE6EjwAgYIIm0oGOy10605u6tbGFhJZVVq/5eqVXsVvz0WsY1LPMW4wBYWviI8gjJeG4xDDDcrPov7ELjGCsbRGWMi1m4Cc4+/qeKjeAjiDkoF2G7sBvZO4knysuygLQHfhr3gHDQCL6qWpWjn9dGjWq75+o/tNfPlyOuoNGHwiI06jU/jMnYx1oR4HhPBvSgCVQLU1YJBKbgfTt7+EZt0uf/jvBQZXEUebMFgqE7jU4Ny5KUWDHJOuQi0IKvjjayJUqMXt8GdawQ+DOCutLvowHFw9lN2Myxr+9ykpwDbWyP+jD8pBjBTY3KLVUzKft8SprCmWpbnyGfoTzUZkr0tjZ7rfUzjn2qjDaSakL0tmziXNVEl5pveX2jfV0xSo19WplecfIdBbnKKo+8y+Pl4A40jaChg9FgQAAAAAElFTkSuQmCC">Launch syncofs tuner</button></a>
 
 						<button onclick="ui.toggleVisibility();">
 							<!-- /icon-eye.png -->
@@ -511,42 +404,6 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 				</div>
 				<!-- END DATA LOGGER -->
 
-				<!-- CAN MAPPING -->
-				<div id="canmapping" class="tabdiv main-content">
-
-					<div class="main-right">
-						<h3 class="underline">Actions</h3>
-						<button onclick="modal.showModal('can-mapping');">
-							<!-- /icon-plus-circle.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAYVJREFUSInFlb9OAkEQxn9acfGaI3bQc/gO/n0AtLM1Rn0FDY9kpZSKiUil0qqAiY1Xi4ZeLHYmt0eO2yWB+CWbTeZmvvluZncWlowVx/cycAA0gBioij0B+kALuAK+5k0cAE3gB5g41rf4Br7kVaBnEdwAJ0ANWJMVA6fAreXXAyo+5IkEDIAtD0HbwFBikqIkgaX8Hog8yBUR0JHYJ6CU59QkVT4PuaIMvAvHRd5HbWhRWbqyZmGHtPEZkcekDS2CNrQIbfE5AlgVY0P2S0ewD5SjYRsHkrXmCPb5g1h8+rZxLMZwyrmL+6JN9yQU+xjSEi0SyvlrG5dWIs32Kvumr8wC6DF/sRO0ZD9cQALlaNnGMuZyTDCzZRZcF21POEbkTAMdFR/AurferEgdFed5DiXgWRw6eQoc5A84hh2YUavjeoiZLS7skir/xONNqIgKPZJt4AyoYy5RCGyI7c7ye/QhV5QwI1cbX7RGmJrnlsX16EfAPmZw1ck++m+Yo3gtSf4Hf6VKhAI+0rkQAAAAAElFTkSuQmCC">Add new mapping</button>
-						<button onclick="ui.sendCmd('can clear');">
-							<!-- /icon-trash-2.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAKNJREFUSIntlmEKhCAQhT+Wpb1T0fXatmu5V9GOUT8yCHdCJ6kt6MGgw9N5Myoq/BkvoAMcMATmgA9Q5Ah0QuDQ2hyBOfNS4CrP2RyBOcutPI9F3/BbfhgolTeSwGGIlq2Zt3sFpxEwLDZO8FWQ1nLt1MTmnWeJboH98Ewc9434Klz/quh9Wyni1L51KYNb4s/kmjUpAgXTY24VgS3wJvMDsAkjQRJaZqmk/aEAAAAASUVORK5CYII=">Remove all mappings</button>
-						<button onclick="ui.showParamsSavedModal();">
-							<!-- /icon-save.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAALhJREFUSIndlUsOgjAQhj+M0RNI4lU0Xs8H12LJDhaeADwGbqamNLSZERJj/2TS5/xf21kUctIeqIABGA3RAKUGUBmN/eg0EHfyk4xdckqlmKsgoaEGAHAAWtn7BI5rA9SQGCAVtbfff65GA6iNAAeJ3tzyJClNfDYrGCb1U4CmBrFafFR4/TGYs9YjzCsAtobEmJIHybvI/wd4SXte4HeRdphbvPP9hxPGdQ6wAx5Av8C4B27ilYnep/GG5uAVCQ8AAAAASUVORK5CYII=">Save mappings to flash</button>
-					</div>
-
-					<div class="main-left">
-						<h2>CAN Mapping</h2>
-						<p>On this page you can configure the CAN mapping settings for your OpenInverter board. CAN mapping allows you to send and receive data via CAN bus. You can specify spot values that you would like to transmit on the CAN bus. Additionally you can specify spot values that you would like to set based on data received on the CAN bus.</p>
-						<p>A maximum of 8 items per CAN message can be mapped.</p>
-
-						<h3 class="underline">Existing CAN Mappings</h3>
-						<table id="existingCanMappingTable" class="existing-can-mapping">
-							<tr>
-								<th>Spot Value</th>
-								<th>Transmit or Receive</th>
-								<th>ID</th>
-								<th>Offset</th>
-								<th>Length</th>
-								<th>Gain</th>
-								<th>Delete Mapping</th>
-							</tr>
-						</table>
-					</div>
-				</div>
-				<!-- END CAN MAPPING -->
 
 
 				<!-- WIFI SETTINGS -->
@@ -576,21 +433,6 @@ You can also program with a cable, see <a href="https://openinverter.org/forum/v
 				</div>
 				<!-- END FILES -->
 
-				<!-- SUPPORT -->
-				<div id="support" class="tabdiv main-content">
-					<div class="main-right">
-						<h3 class="underline">Actions</h3>
-						<a href="/remote.html"><button>
-							<!-- /icon-tool.png -->
-							<img class="buttonimg" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAGXRFWHRTb2Z0d2FyZQB3d3cuaW5rc2NhcGUub3Jnm+48GgAAAUdJREFUSInl1M8uBEEQx/HPcmbj33IQVxJeQ4Q34U6WFV7FS/hzccGFOHEgvMAiER6AdeiaZIwsM6xEopJOd1dXf6vnN9XNH7RxNHGOx2gnaGHgp/Al3KPTpS3/FP4aoF0sYBo34bvE6HfhE3gI0BZqaAQ0gzcidgQrKsrVDNBewOtd4PmkrSoJzmPTQsw3voB3cAx9JRNMRX8afaew3sAh5nAbvtnSx8dTQAdjXpQoP56JcbtKgpPYtFg4dV6STK6lmJ+VhTdwHZuahbU61sNflwrgIGLXysLzn/9ZndewHbF30o2vBM+qZQybklyjGJZk2Y/YV++lrAQv6l5sd72CX+NIeugepPJdzcV2tTFcBORKeiI+81eyoRInz/sr285vwmt4xgsmew3PErQDNh9JegbPbMvHsusZHPojSVuSa0f68f/c3gAXBoY3A6QNPQAAAABJRU5ErkJggg==">Start remote support session</button></a>
-					</div>
-					<div class="main-left">
-						<h2>Support</h2>
-						<p>You can get support from the community on the <a href="https://openinverter.org">OpenInverter Forum</a>.</p>
-						<p>Paid support is also available. See details <a href="https://openinverter.org/docs/index.html%3Fen_consulting,35.html">here</a>.
-					</div>
-				</div>
-				<!-- END SUPPORT -->
 <script>
 let wakeLock = null;
 async function requestWakeLock() {

@@ -265,7 +265,12 @@ void WiFiManager::stopAP() {
 // update — no-op: ESPAsyncWebServer handles everything internally
 // ---------------------------------------------------------------------------
 void WiFiManager::update() {
-    if (active) GVRETServer::getInstance().update();
+    if (active) {
+        GVRETServer::getInstance().update();
+        // Drive WebSocket cleanup every loop — ensures stale connections from a
+        // closed browser are reclaimed even when no CAN frames are arriving.
+        CANMonitor::instance().update();
+    }
 
     // Deferred PNG decode — runs on loopTask so async_tcp watchdog is never starved
     if (pngPending && pngBuffer && pngBufLen > 0) {
@@ -1059,6 +1064,7 @@ void WiFiManager::handleTripLog(AsyncWebServerRequest* request) {
     AsyncWebServerResponse* resp = request->beginResponse(200, "text/csv", csv);
     resp->addHeader("Content-Disposition", "attachment; filename=\"trip_log.csv\"");
     resp->addHeader("Access-Control-Allow-Origin", "*");
+    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1082,6 +1088,7 @@ void WiFiManager::handleFaultLog(AsyncWebServerRequest* request) {
     AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
     resp->addHeader("Access-Control-Allow-Origin", "*");
     resp->addHeader("Cache-Control", "no-cache");
+    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1257,6 +1264,7 @@ void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
     AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
     resp->addHeader("Access-Control-Allow-Origin", "*");
     resp->addHeader("Cache-Control", "no-cache");
+    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
