@@ -72,9 +72,42 @@
 #define PARAM_UPDATE_INTERVAL_MS  100
 
 // Debug
-#define DEBUG_SERIAL        false
+#define DEBUG_SERIAL        true
 #define DEBUG_CAN           false  // Enable to see CAN messages
 #define DEBUG_SDO           false  // Enable to see SDO TX/RX traffic (very chatty)
 #define DEBUG_TOUCH         false
+
+// ============================================
+// BLE Parameter Bus — watch + phone companion apps
+// ============================================
+// GATT server (peripheral) exposing a small set of parameters via a
+// generic directory-based bus (see PROTOCOL.md) — used by BOTH the Wear OS
+// watch app and the Android phone app. Uses the same classic ESP32 Arduino
+// BLE library as Immobilizer's BLE_ENABLED scanner — do NOT add NimBLE
+// alongside this; two BLE stacks in one firmware conflict.
+#define BLE_TELEMETRY_ENABLED     true
+#define BLE_DEVICE_NAME           "ZombieVerter-Dial"
+#define BLE_TELEMETRY_INTERVAL_MS 1000   // auto-push rate for readable params
+#define BLE_GEAR_INTERLOCK_RPM    100    // reject gear-change writes above this speed
+
+#define BLE_SERVICE_UUID          "b25e0000-0001-4a5e-8f1a-000000000001"
+#define BLE_CHAR_ACK_UUID         "b25e0000-0001-4a5e-8f1a-000000000008"
+
+// Generic parameter bus — see PROTOCOL.md
+#define BLE_CHAR_DIR_COUNT_UUID       "b25e0000-0001-4a5e-8f1a-000000000009"
+#define BLE_CHAR_DIR_INDEX_UUID       "b25e0000-0001-4a5e-8f1a-00000000000a"
+#define BLE_CHAR_DIR_ENTRY_UUID       "b25e0000-0001-4a5e-8f1a-00000000000b"
+#define BLE_CHAR_PARAM_READ_REQ_UUID  "b25e0000-0001-4a5e-8f1a-00000000000c"
+#define BLE_CHAR_PARAM_VALUE_UUID     "b25e0000-0001-4a5e-8f1a-00000000000d"
+#define BLE_CHAR_PARAM_WRITE_REQ_UUID "b25e0000-0001-4a5e-8f1a-00000000000e"
+
+// BLE proximity unlock (connection+token based — NOT the old disabled
+// BLE_ENABLED scanner in Immobilizer.h/.cpp, which remains untouched).
+// A paired watch/phone writes a stored 16-byte token to this characteristic
+// immediately after connecting; Immobilizer checks it against its own
+// stored token list. See Immobilizer::onBleAuthReceived().
+#define BLE_CHAR_AUTH_UUID        "b25e0000-0001-4a5e-8f1a-00000000000f"
+#define BLE_AUTH_TOKEN_LEN        16
+#define MAX_BLE_AUTH_TOKENS       4
 
 #endif // CONFIG_H

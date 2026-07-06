@@ -74,6 +74,7 @@ Immobilizer::Immobilizer()
       blePairStartMs(0),
       bleUnlockCooldown(0),
       bleEnabled(true),
+      bleTokenCount(0),
       onBLEUnlockCb(nullptr)
 {
     memset(enteredPIN, 0, sizeof(enteredPIN));
@@ -85,6 +86,7 @@ Immobilizer::Immobilizer()
 
     memset(authorizedFobs, 0, sizeof(authorizedFobs));
     memset(bleUUIDs,       0, sizeof(bleUUIDs));
+    memset(bleTokens,      0, sizeof(bleTokens));
 }
 
 // ============================================================================
@@ -129,8 +131,14 @@ void Immobilizer::init(SDOManager* sdo) {
     // don't trigger auto-unlock when BLE is re-enabled
     bleUUIDCount = 0;
     saveBLEToNVS();
-    Serial.println("[IMMOBILIZER] BLE disabled");
+    Serial.println("[IMMOBILIZER] BLE (scanning) disabled");
 #endif
+
+    // BLE proximity unlock v2 (connection+token based) — independent of
+    // BLE_ENABLED above, since it doesn't scan. Runs whenever
+    // BLE_TELEMETRY_ENABLED provides the GATT server/Auth characteristic.
+    loadBleTokensFromNVS();
+    Serial.printf("[IMMOBILIZER] BLE token unlock ready (%d token(s) stored)\n", bleTokenCount);
 
     Serial.println("[IMMOBILIZER] Init complete — LOCKED");
 }
@@ -235,6 +243,19 @@ void Immobilizer::update() {
     }
 
     // ── 3. BLE pairing timeout ────────────────────────────────────────────
+    // NOTE: this check applies to PAIR_BLE mode regardless of which BLE
+    // mechanism is active (old scanner below, or the new connection+token
+    // system in onBleAuthReceived()) — it must NOT be gated behind
+    // BLE_ENABLED, since the new system works even with that flag false.
+    if (mode == ImmobMode::PAIR_BLE && blePairStartMs != 0) {
+        if (now - blePairStartMs >= BLE_PAIR_TIMEOUT_MS) {
+            Serial.println("[BLE] Pairing timeout — returning to UNLOCKED");
+            if (onWarningCb) onWarningCb("BLE pairing\ntimed out");
+            mode = ImmobMode::UNLOCKED;
+            blePairStartMs = 0;
+        }
+    }
+
 #if BLE_ENABLED
     // Consume BLE scan result from core 0 — safe to call LVGL/unlock from here
     if (bleEnabled && g_bleResult.ready) {
@@ -244,15 +265,6 @@ void Immobilizer::update() {
         rssi = g_bleResult.rssi;
         g_bleResult.ready = false;  // consume before processing (re-entrant safe)
         onBLEDevice(uuid, rssi);
-    }
-
-    if (mode == ImmobMode::PAIR_BLE && blePairStartMs != 0) {
-        if (now - blePairStartMs >= BLE_PAIR_TIMEOUT_MS) {
-            Serial.println("[BLE] Pairing timeout — returning to UNLOCKED");
-            if (onWarningCb) onWarningCb("BLE pairing\ntimed out");
-            mode = ImmobMode::UNLOCKED;
-            blePairStartMs = 0;
-        }
     }
 #endif
 
@@ -329,6 +341,11 @@ void Immobilizer::lock() {
     pinPosition  = 0;
     currentDigit = 0;
     memset(enteredPIN, 0, sizeof(enteredPIN));
+
+    // Suppress BLE auto-unlock for a window after this deliberate lock —
+    // otherwise a still-connected phone would instantly re-unlock it on
+    // the next loop iteration. See BLE_LOCK_GRACE_MS comment in Immobilizer.h.
+    bleLockGraceUntil = millis() + BLE_LOCK_GRACE_MS;
 
     // Schedule DriveInhibit=2 via state machine — do NOT call sendDriveInhibit()
     // directly here, as this may be called from onSDOResult or other callbacks.
@@ -692,6 +709,114 @@ void Immobilizer::saveBLEToNVS() {
     for (uint8_t i = 0; i < bleUUIDCount; i++) {
         String key = String(NVS_KEY_BLE_PREFIX) + String(i);
         prefs.putBytes(key.c_str(), bleUUIDs[i], strlen(bleUUIDs[i]) + 1);
+    }
+    prefs.end();
+}
+
+// ============================================================================
+// BLE proximity unlock v2 — connection+token based
+//
+// Called from main.cpp whenever BleTelemetry's Auth characteristic receives
+// a write (i.e. a client connected to our GATT server and sent its stored
+// token). Mirrors onBLEDevice()'s two-branch structure (pairing vs. normal
+// unlock-check) — same PAIR_BLE mode, same cooldown, same final unlock
+// block — just triggered by token match over an active connection instead
+// of scanned UUID+RSSI. The BLE_ENABLED scanner and onBLEDevice() above are
+// untouched and remain disabled/unused.
+// ============================================================================
+void Immobilizer::onBleAuthReceived(const uint8_t* token, size_t len) {
+    if (!token || len != BLE_AUTH_TOKEN_LEN) return;
+
+    if (mode == ImmobMode::PAIR_BLE) {
+        // Check for duplicate
+        for (uint8_t i = 0; i < bleTokenCount; i++) {
+            if (memcmp(bleTokens[i], token, BLE_AUTH_TOKEN_LEN) == 0) {
+                Serial.println("[BLE] Token already stored — treating as re-pair success");
+                mode = ImmobMode::UNLOCKED;
+                blePairStartMs = 0;
+                if (onSuccessCb) onSuccessCb("BLE device paired!");
+                return;
+            }
+        }
+        if (bleTokenCount >= MAX_BLE_AUTH_TOKENS) {
+            Serial.println("[BLE] Token storage full");
+            if (onWarningCb) onWarningCb("BLE storage full");
+            mode = ImmobMode::UNLOCKED;
+            blePairStartMs = 0;
+            return;
+        }
+        memcpy(bleTokens[bleTokenCount++], token, BLE_AUTH_TOKEN_LEN);
+        saveBleTokensToNVS();
+        Serial.printf("[BLE] Token paired, total=%d\n", bleTokenCount);
+        if (onSuccessCb) onSuccessCb("BLE device paired!");
+        mode = ImmobMode::UNLOCKED;
+        blePairStartMs = 0;
+        // Same 10s cooldown rationale as the old UUID path: don't let the
+        // device that was just paired immediately re-trigger an unlock
+        // loop while still connected.
+        bleUnlockCooldown = millis() + 10000;
+        return;
+    }
+
+    // Normal operation — unlock only, never lock (see BLE_ENABLED header
+    // comment: locking must always be a deliberate PIN/RFID action).
+    if (mode != ImmobMode::LOCKED) return;
+    if (!bleEnabled) return;
+    if (bleUnlockCooldown != 0 && millis() < bleUnlockCooldown) return;
+    if (millis() < bleLockGraceUntil) {
+        Serial.println("[BLE] Auto-unlock suppressed — just locked, grace period active");
+        return;
+    }
+
+    for (uint8_t i = 0; i < bleTokenCount; i++) {
+        if (memcmp(bleTokens[i], token, BLE_AUTH_TOKEN_LEN) == 0) {
+            Serial.println("[BLE] Known token — unlocking");
+            mode = ImmobMode::UNLOCKED;
+            clearPIN();
+            writePending    = true;
+            writeInFlight   = false;
+            nextRetryMs     = millis();
+            writeRetryCount = 0;
+            if (onBLEUnlockCb) onBLEUnlockCb();
+            else if (onUnlockCb) onUnlockCb();
+            return;
+        }
+    }
+    Serial.println("[BLE] Unrecognized token — ignoring");
+}
+
+void Immobilizer::clearBleTokens() {
+    bleTokenCount = 0;
+    memset(bleTokens, 0, sizeof(bleTokens));
+    saveBleTokensToNVS();
+    Serial.println("[BLE] All tokens cleared");
+}
+
+void Immobilizer::loadBleTokensFromNVS() {
+    Preferences prefs;
+    prefs.begin(NVS_NAMESPACE, true);
+    bleTokenCount = prefs.getUChar(NVS_KEY_BLETOK_COUNT, 0);
+    if (bleTokenCount > MAX_BLE_AUTH_TOKENS) bleTokenCount = 0;
+    for (uint8_t i = 0; i < bleTokenCount; i++) {
+        String key = String(NVS_KEY_BLETOK_PREFIX) + String(i);
+        size_t len = prefs.getBytes(key.c_str(), bleTokens[i], BLE_AUTH_TOKEN_LEN);
+        if (len != BLE_AUTH_TOKEN_LEN) {
+            Serial.printf("[BLE] Token %d load error — clearing tokens\n", i);
+            bleTokenCount = 0;
+            break;
+        }
+    }
+    prefs.end();
+    Serial.printf("[BLE] %d token(s) loaded from NVS\n", bleTokenCount);
+}
+
+void Immobilizer::saveBleTokensToNVS() {
+    Preferences prefs;
+    prefs.begin(NVS_NAMESPACE, false);
+    prefs.putUChar(NVS_KEY_BLETOK_COUNT, bleTokenCount);
+    for (uint8_t i = 0; i < bleTokenCount; i++) {
+        String key = String(NVS_KEY_BLETOK_PREFIX) + String(i);
+        prefs.putBytes(key.c_str(), bleTokens[i], BLE_AUTH_TOKEN_LEN);
     }
     prefs.end();
 }

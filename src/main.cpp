@@ -15,10 +15,11 @@
 #include "EfficiencyTracker.h"
 #include "Immobilizer.h"
 #include "SDOManager.h"
+#include "BleTelemetry.h"
 
 // ── Firmware version strings — update on each release ────────────────────────
-#define DIAL_FW_VERSION   "v2.5.2"   // M5Dial firmware version
-#define UI_VERSION        "v2.5.2"   // Web UI version (ui.js / index.html)
+#define DIAL_FW_VERSION   "v2.5.1"   // M5Dial firmware version
+#define UI_VERSION        "v2.5.1"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
@@ -402,7 +403,7 @@ void onTouchTap(uint16_t x, uint16_t y) {
                 uiManager.setScreen(SCREEN_LOCK);
                 break;
             case 2:  // Clear BLE Beacons
-                immobilizer.clearBLEUUIDs();
+                immobilizer.clearBleTokens();
                 uiManager.showWarning("BLE beacons\ncleared");
                 break;
             case 3:  // Clear RFID Fobs
@@ -705,6 +706,21 @@ void setup() {
     // Brief pause so user can see the status message
     for (int i = 0; i < 100; i++) { lv_timer_handler(); delay(10); }
 
+#if BLE_TELEMETRY_ENABLED
+    // Watch companion GATT server — telemetry notify + regen/gear write.
+    // Started here (not earlier) so canManager already has real parameters
+    // loaded, and after immobilizer.init() since both may eventually share
+    // the BLE stack (see BleTelemetry.h header comment).
+    BleTelemetry::instance().begin(&canManager);
+
+    // BLE proximity unlock v2 (connection+token based) — a paired watch/
+    // phone writes its stored token here after connecting. Separate from
+    // the old BLE_ENABLED scanner in Immobilizer, which remains disabled.
+    BleTelemetry::instance().setOnAuthReceived([](const uint8_t* data, size_t len) {
+        immobilizer.onBleAuthReceived(data, len);
+    });
+#endif
+
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);
     inputManager.setOnButtonDoubleClick(onButtonDoubleClick);
@@ -769,6 +785,9 @@ void loop() {
     immobilizer.update();
 
     if (wifiMode) {
+#if BLE_TELEMETRY_ENABLED
+        BleTelemetry::instance().suspend();
+#endif
         wifiManager.update();
         canManager.update();
 
@@ -820,16 +839,33 @@ void loop() {
         // Keep SDO polling running in WiFi mode so spot values stay live
         pollNextSDOParam();
 
-        // Yield to FreeRTOS scheduler so the async_tcp task gets CPU time.
-        // delay() on the Arduino loop task does NOT properly yield on ESP32 —
-        // it busy-waits and starves the TCP stack during parallel browser
-        // connection setup, causing ERR_EMPTY_RESPONSE on page load.
-        vTaskDelay(pdMS_TO_TICKS(5));
+        delay(10);
         return;
     }
 
     // Normal mode: full CAN + LVGL update
     canManager.update();
+
+#if BLE_TELEMETRY_ENABLED
+    BleTelemetry::instance().resume();
+    BleTelemetry::instance().update();
+
+    // While locked, keep re-checking whether the currently connected
+    // device (if any) has a known valid token — makes "paired device still
+    // in range" a continuously-true unlock condition, not just a one-time
+    // check at the moment it first connected. Without this, locking the
+    // dial while a paired phone/watch is still connected would require a
+    // full disconnect+reconnect (or reboot) before it would auto-unlock
+    // again, which contradicts the "presence = unlocked" behavior this
+    // feature is meant to have.
+    if (immobilizer.getMode() == ImmobMode::LOCKED) {
+        uint8_t cachedToken[32];
+        size_t cachedLen = 0;
+        if (BleTelemetry::instance().getLastAuthToken(cachedToken, cachedLen)) {
+            immobilizer.onBleAuthReceived(cachedToken, cachedLen);
+        }
+    }
+#endif
 
     // Resolve cached parameter pointers (no-op after first successful resolution)
     refreshParamCache();

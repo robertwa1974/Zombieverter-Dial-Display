@@ -57,6 +57,27 @@
 #define NVS_KEY_BLE_COUNT       "blecnt"
 #define NVS_KEY_BLE_PREFIX      "ble"   // "ble0"..."ble3", BLE_UUID_LEN bytes each
 
+// ── BLE proximity unlock v2 (connection+token based) ─────────────────────────
+// Replaces the scanning approach above (which never worked reliably on this
+// hardware — never detected any advertisement). Instead of scanning for a
+// beacon UUID, a paired watch/phone connects to BleTelemetry's GATT server
+// and writes a stored random token to its Auth characteristic. Same
+// PAIR_BLE mode, same cooldown/timeout, same unlock-only philosophy as
+// above — only the detection mechanism differs. See BLE_UNLOCK_INTEGRATION.md.
+#define BLE_AUTH_TOKEN_LEN      16
+#define MAX_BLE_AUTH_TOKENS     4
+#define NVS_KEY_BLETOK_COUNT    "btokcnt"
+#define NVS_KEY_BLETOK_PREFIX   "btok"  // "btok0".."btok3", BLE_AUTH_TOKEN_LEN bytes each
+
+// Grace period after a DELIBERATE lock during which BLE auto-unlock
+// (both the fresh-token-write path and the continuous "is paired device
+// still connected" re-check) is suppressed. Without this, locking while
+// your phone is still in range would instantly re-unlock on the very next
+// loop iteration — defeating the whole point of a deliberate lock action.
+// After this window, if the phone is still connected (e.g. left in the
+// car), normal auto-unlock resumes.
+#define BLE_LOCK_GRACE_MS       15000
+
 // ============================================================================
 // NVS storage keys
 // ============================================================================
@@ -162,8 +183,18 @@ public:
     void    clearBLEUUIDs();
     uint8_t getBLEUUIDCount() const { return bleUUIDCount; }
     void    setBLEEnabled(bool enabled) { bleEnabled = enabled; }
-    // Called by BLE scanner task on core 0
+    // Called by BLE scanner task (core 0). Old scanning approach — unused
+    // while BLE_ENABLED is false, kept for reference/possible future revival.
     void    onBLEDevice(const char* uuid, int rssi);
+
+    // ── BLE proximity unlock v2 (connection+token based) ───────────────────
+    // Called from main.cpp whenever BleTelemetry's Auth characteristic
+    // receives a write. In PAIR_BLE mode, stores the token; in LOCKED mode,
+    // checks it against stored tokens and unlocks on match — same final
+    // unlock path as onBLEDevice() above, just triggered differently.
+    void    onBleAuthReceived(const uint8_t* token, size_t len);
+    void    clearBleTokens();
+    uint8_t getBleTokenCount() const { return bleTokenCount; }
 
 private:
     SDOManager* sdoManager;
@@ -206,12 +237,19 @@ private:
     uint32_t bleUnlockCooldown;   // millis() after which BLE unlock is allowed; 0 = always allowed
     bool     bleEnabled;          // false while WiFi AP is active (radio contention)
 
+    // BLE proximity unlock v2 — token storage (see #define block above)
+    uint8_t  bleTokens[MAX_BLE_AUTH_TOKENS][BLE_AUTH_TOKEN_LEN];
+    uint8_t  bleTokenCount;
+    uint32_t bleLockGraceUntil = 0;  // millis() until which BLE auto-unlock is suppressed after a deliberate lock
+
     // NVS helpers
     void loadFromNVS();
     void savePINToNVS();
     void saveFobsToNVS();
     void loadBLEFromNVS();
     void saveBLEToNVS();
+    void loadBleTokensFromNVS();
+    void saveBleTokensToNVS();
 
     // Auth helpers
     bool validatePIN();
