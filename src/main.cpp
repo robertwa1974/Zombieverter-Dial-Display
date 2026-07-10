@@ -18,8 +18,8 @@
 #include "BleTelemetry.h"
 
 // ── Firmware version strings — update on each release ────────────────────────
-#define DIAL_FW_VERSION   "v2.5.1"   // M5Dial firmware version
-#define UI_VERSION        "v2.5.1"   // Web UI version (ui.js / index.html)
+#define DIAL_FW_VERSION   "v2.5.4"   // M5Dial firmware version
+#define UI_VERSION        "v2.5.4"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
