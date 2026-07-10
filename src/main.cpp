@@ -226,6 +226,34 @@ void onEncoderRotate(int32_t delta) {
             if (newRegen < -35) newRegen = -35;
             canManager.setParameter(61, newRegen);
         }
+    } else if (currentScreen == SCREEN_THROTMAX) {
+        if (!uiManager.isEditMode()) {
+            ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+            uiManager.setScreen(dest);
+            return;
+        }
+        CANParameter* throtmax = canManager.getParameter(25);
+        if (throtmax) {
+            int32_t newThrotMax = throtmax->getValueAsInt();
+            newThrotMax += delta > 0 ? 1 : -1;
+            if (newThrotMax > 100) newThrotMax = 100;
+            if (newThrotMax < 0)   newThrotMax = 0;
+            canManager.setParameter(25, newThrotMax);
+        }
+    } else if (currentScreen == SCREEN_BRAKEREGEN) {
+        if (!uiManager.isEditMode()) {
+            ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
+            uiManager.setScreen(dest);
+            return;
+        }
+        CANParameter* brakeRegen = canManager.getParameter(122);
+        if (brakeRegen) {
+            int32_t newBrakeRegen = brakeRegen->getValueAsInt();
+            newBrakeRegen += delta > 0 ? 1 : -1;
+            if (newBrakeRegen > 0)   newBrakeRegen = 0;
+            if (newBrakeRegen < -35) newBrakeRegen = -35;
+            canManager.setParameter(122, newBrakeRegen);
+        }
     } else {
         ScreenID dest = delta > 0 ? uiManager.getNextScreen() : uiManager.getPreviousScreen();
         if (dest == SCREEN_SETTINGS) {
@@ -272,7 +300,9 @@ void onButtonClick() {
     // On editable screens: first click enters edit mode, second click exits
     if (currentScreen == SCREEN_GEAR ||
         currentScreen == SCREEN_MOTOR ||
-        currentScreen == SCREEN_REGEN) {
+        currentScreen == SCREEN_REGEN ||
+        currentScreen == SCREEN_THROTMAX ||
+        currentScreen == SCREEN_BRAKEREGEN) {
         if (uiManager.isEditMode()) {
             uiManager.toggleEditMode();  // exit edit mode
         } else {
@@ -839,7 +869,11 @@ void loop() {
         // Keep SDO polling running in WiFi mode so spot values stay live
         pollNextSDOParam();
 
+<<<<<<< HEAD
         delay(10);
+=======
+        vTaskDelay(pdMS_TO_TICKS(5));
+>>>>>>> main
         return;
     }
 

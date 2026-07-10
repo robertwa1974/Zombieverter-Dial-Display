@@ -26,6 +26,14 @@ enum ScreenID {
     SCREEN_SETTINGS,
     SCREEN_CHARGING,       // Auto-shown when opmode == 3 (charge mode)
     SCREEN_HEALTH_CHECK,   // Pre-drive check on unlock
+    // NOTE: appended after HEALTH_CHECK (not inserted alongside REGEN) so the
+    // bit position of every pre-existing ScreenID in the persisted screenMask
+    // (NVS) stays unchanged across the OTA update. Bits 14/15 were already
+    // unused/defaulted-on in SCREEN_MASK_DEFAULT (0xFFFF), so existing units
+    // pick these screens up automatically. See settings.html SCREEN_IDS map
+    // for the JS-side mirror of these bit numbers — keep them in sync.
+    SCREEN_THROTMAX,        // 14 — max throttle % (mirrors Regen screen UX)
+    SCREEN_BRAKEREGEN,      // 15 — brake-pedal-linked regen % (regenBrake param)
     SCREEN_COUNT
 };
 
@@ -47,7 +55,7 @@ public:
     void showLockPinPad();    // Reveal PIN pad (called on touch tap while locked)
     bool isLockPinPadVisible() const { return lockPinPadVisible; }
     
-    // Edit mode control (for Gear, Motor, Regen screens)
+    // Edit mode control (for Gear, Motor, Regen, ThrotMax, BrakeRegen screens)
     void toggleEditMode();
     bool isEditMode() { return editMode; }
     bool isEditableScreen();  // Check if current screen supports editing
@@ -89,6 +97,8 @@ private:
     void createGearScreen();
     void createMotorScreen();
     void createRegenScreen();
+    void createThrotMaxScreen();
+    void createBrakeRegenScreen();
     void createWiFiScreen();
     void createSettingsScreen();
     void createChargingScreen();
@@ -103,6 +113,8 @@ private:
     void updateGear();
     void updateMotor();
     void updateRegen();
+    void updateThrotMax();
+    void updateBrakeRegen();
     void updateCharging();
     void updateHealthCheck();
     
@@ -188,6 +200,16 @@ private:
     lv_meter_indicator_t* regen_indicator;
     lv_obj_t* regen_value_label;
     lv_obj_t* regen_title_label;
+
+    // ThrotMax screen widgets
+    lv_obj_t* throtmax_arc;
+    lv_obj_t* throtmax_value_label;
+    lv_obj_t* throtmax_title_label;
+
+    // BrakeRegen screen widgets
+    lv_obj_t* brakeregen_arc;
+    lv_obj_t* brakeregen_value_label;
+    lv_obj_t* brakeregen_title_label;
     
     // WiFi screen widgets
     lv_obj_t* wifi_ssid_label;
@@ -244,7 +266,7 @@ private:
     Immobilizer* immobilizer;  // Security system
     ScreenID currentScreen;
     uint32_t lastUpdateTime;
-    bool editMode;          // For programmable screens (Gear, Motor, Regen)
+    bool editMode;          // For programmable screens (Gear, Motor, Regen, ThrotMax, BrakeRegen)
     bool lockPinPadVisible; // Lock screen: false=padlock view, true=PIN entry view
     
     // Version info — set from main.cpp via setVersionInfo()
