@@ -254,6 +254,14 @@
               <span>Regen</span>
             </label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_throtmax" style="width:16px;height:16px;">
+              <span>Throttle Max</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="scr_brakeregen" style="width:16px;height:16px;">
+              <span>Brake Regen</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
               <input type="checkbox" id="scr_wifi" disabled checked style="width:16px;height:16px;">
               <span>WiFi</span>
             </label>
@@ -958,6 +966,10 @@ function deleteLogo() {
 // ── Screen visibility and immobilizer settings ──────────────────────────────
 
 // ScreenID enum values matching UIManager.h
+// NOTE: scr_throtmax (14) and scr_brakeregen (15) were appended after
+// HEALTH_CHECK in the firmware enum (not inserted next to scr_regen) so
+// that every bit below stays pinned to the same screen it always was —
+// keep new screens appended here too, never inserted mid-list.
 var SCREEN_IDS = {
   scr_dashboard:   2,
   scr_power:       3,
@@ -968,7 +980,9 @@ var SCREEN_IDS = {
   scr_motor:       8,
   scr_regen:       9,
   scr_wifi:        10,
-  scr_settings:    11
+  scr_settings:    11,
+  scr_throtmax:    14,
+  scr_brakeregen:  15
 };
 
 function loadScreenAndImmobSettings() {

@@ -77,6 +77,8 @@ bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
     createGearScreen();
     createMotorScreen();
     createRegenScreen();
+    createThrotMaxScreen();
+    createBrakeRegenScreen();
     createWiFiScreen();
     createSettingsScreen();
     createChargingScreen();
@@ -158,6 +160,8 @@ void UIManager::update() {
             case SCREEN_GEAR:        updateGear();        break;
             case SCREEN_MOTOR:       updateMotor();       break;
             case SCREEN_REGEN:       updateRegen();       break;
+            case SCREEN_THROTMAX:    updateThrotMax();    break;
+            case SCREEN_BRAKEREGEN:  updateBrakeRegen();  break;
             case SCREEN_SETTINGS:    updateSettings();    break;
             case SCREEN_CHARGING:    updateCharging();    break;
             case SCREEN_HEALTH_CHECK: updateHealthCheck(); break;
@@ -880,6 +884,82 @@ void UIManager::createRegenScreen() {
     lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
 }
 
+void UIManager::createThrotMaxScreen() {
+    screens[SCREEN_THROTMAX] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_THROTMAX], lv_color_black(), 0);
+
+    throtmax_title_label = lv_label_create(screens[SCREEN_THROTMAX]);
+    lv_label_set_text(throtmax_title_label, "THROTTLE MAX");
+    lv_obj_set_style_text_font(throtmax_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(throtmax_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(throtmax_title_label, LV_ALIGN_TOP_MID, 0, 5);
+
+    throtmax_arc = lv_arc_create(screens[SCREEN_THROTMAX]);
+    lv_obj_set_size(throtmax_arc, 180, 180);
+    lv_obj_center(throtmax_arc);
+    lv_arc_set_rotation(throtmax_arc, 135);
+    lv_arc_set_bg_angles(throtmax_arc, 0, 270);
+    lv_arc_set_value(throtmax_arc, 100);
+    lv_arc_set_range(throtmax_arc, 0, 100);
+    lv_obj_set_style_arc_width(throtmax_arc, 12, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(throtmax_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(throtmax_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(throtmax_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+    lv_obj_remove_style(throtmax_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(throtmax_arc, LV_OBJ_FLAG_CLICKABLE);
+
+    throtmax_value_label = lv_label_create(screens[SCREEN_THROTMAX]);
+    lv_label_set_text(throtmax_value_label, "100%");
+    lv_obj_set_style_text_font(throtmax_value_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_color(throtmax_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(throtmax_value_label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t* inst = lv_label_create(screens[SCREEN_THROTMAX]);
+    lv_label_set_text(inst, "Click to edit");
+    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
+void UIManager::createBrakeRegenScreen() {
+    screens[SCREEN_BRAKEREGEN] = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screens[SCREEN_BRAKEREGEN], lv_color_black(), 0);
+
+    brakeregen_title_label = lv_label_create(screens[SCREEN_BRAKEREGEN]);
+    lv_label_set_text(brakeregen_title_label, "BRAKE REGEN");
+    lv_obj_set_style_text_font(brakeregen_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(brakeregen_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    lv_obj_align(brakeregen_title_label, LV_ALIGN_TOP_MID, 0, 5);
+
+    brakeregen_arc = lv_arc_create(screens[SCREEN_BRAKEREGEN]);
+    lv_obj_set_size(brakeregen_arc, 180, 180);
+    lv_obj_center(brakeregen_arc);
+    lv_arc_set_rotation(brakeregen_arc, 135);
+    lv_arc_set_bg_angles(brakeregen_arc, 0, 270);
+    lv_arc_set_value(brakeregen_arc, 0);
+    lv_arc_set_range(brakeregen_arc, -35, 0);
+    lv_obj_set_style_arc_width(brakeregen_arc, 12, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(brakeregen_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+    lv_obj_remove_style(brakeregen_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(brakeregen_arc, LV_OBJ_FLAG_CLICKABLE);
+
+    brakeregen_value_label = lv_label_create(screens[SCREEN_BRAKEREGEN]);
+    lv_label_set_text(brakeregen_value_label, "0%");
+    lv_obj_set_style_text_font(brakeregen_value_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_color(brakeregen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_obj_align(brakeregen_value_label, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t* inst2 = lv_label_create(screens[SCREEN_BRAKEREGEN]);
+    lv_label_set_text(inst2, "Click to edit");
+    lv_obj_set_style_text_font(inst2, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(inst2, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+    lv_obj_set_style_text_align(inst2, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(inst2, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
 void UIManager::createWiFiScreen() {
     screens[SCREEN_WIFI] = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screens[SCREEN_WIFI], lv_color_black(), 0);
@@ -1280,6 +1360,66 @@ void UIManager::updateRegen() {
     }
 }
 
+void UIManager::updateThrotMax() {
+    if (!canManager) return;
+
+    lv_obj_t* screen = screens[SCREEN_THROTMAX];
+    if (screen) {
+        lv_label_set_text(throtmax_title_label, editMode ? "THROTTLE  [EDITING]" : "THROTTLE MAX");
+        lv_obj_set_style_text_color(throtmax_title_label,
+            editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    }
+
+    CANParameter* throtmax = canManager->getParameterByName("throtmax");
+    if (throtmax) {
+        int32_t value = throtmax->getValueAsInt();
+        lv_arc_set_value(throtmax_arc, value);
+        lv_label_set_text_fmt(throtmax_value_label, "%d%%", value);
+        // Unlike Regen, higher = more capable here, so the color ramp runs
+        // the opposite direction: green near full power, red when heavily
+        // restricted (e.g. a torque-limited/valet-style setting).
+        if (value >= 80) {
+            lv_obj_set_style_arc_color(throtmax_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(throtmax_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (value >= 40) {
+            lv_obj_set_style_arc_color(throtmax_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(throtmax_value_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_arc_color(throtmax_arc, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(throtmax_value_label, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+    }
+}
+
+void UIManager::updateBrakeRegen() {
+    if (!canManager) return;
+
+    lv_obj_t* screen = screens[SCREEN_BRAKEREGEN];
+    if (screen) {
+        lv_label_set_text(brakeregen_title_label, editMode ? "BRAKE REGEN  [EDITING]" : "BRAKE REGEN");
+        lv_obj_set_style_text_color(brakeregen_title_label,
+            editMode ? lv_palette_main(LV_PALETTE_ORANGE) : lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+    }
+
+    CANParameter* brakeRegen = canManager->getParameterByName("regenBrake");
+    if (brakeRegen) {
+        int32_t value = brakeRegen->getValueAsInt();
+        lv_arc_set_value(brakeregen_arc, value);
+        lv_label_set_text_fmt(brakeregen_value_label, "%d%%", value);
+        int absValue = abs(value);
+        if (absValue > 25) {
+            lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(brakeregen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (absValue > 10) {
+            lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_main(LV_PALETTE_YELLOW), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(brakeregen_value_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_darken(LV_PALETTE_GREY, 1), LV_PART_INDICATOR);
+            lv_obj_set_style_text_color(brakeregen_value_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
+        }
+    }
+}
+
 void UIManager::setVersionInfo(const char* dialFW, const char* uiFW) {
     strncpy(dialFWVersion, dialFW, sizeof(dialFWVersion) - 1);
     dialFWVersion[sizeof(dialFWVersion) - 1] = '\0';
@@ -1358,7 +1498,9 @@ void UIManager::toggleEditMode() {
 bool UIManager::isEditableScreen() {
     return (currentScreen == SCREEN_GEAR ||
             currentScreen == SCREEN_MOTOR ||
-            currentScreen == SCREEN_REGEN);
+            currentScreen == SCREEN_REGEN ||
+            currentScreen == SCREEN_THROTMAX ||
+            currentScreen == SCREEN_BRAKEREGEN);
 }
 
 void UIManager::showWarning(const char* msg) {
