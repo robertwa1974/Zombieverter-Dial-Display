@@ -869,11 +869,7 @@ void loop() {
         // Keep SDO polling running in WiFi mode so spot values stay live
         pollNextSDOParam();
 
-<<<<<<< HEAD
-        delay(10);
-=======
         vTaskDelay(pdMS_TO_TICKS(5));
->>>>>>> main
         return;
     }
 
