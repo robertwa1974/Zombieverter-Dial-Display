@@ -808,7 +808,8 @@ void UIManager::createMotorScreen() {
     lv_obj_align(motor_current_label, LV_ALIGN_CENTER, 0, -16);
 
     // ── Horizontal pill row ───────────────────────────────────────────────
-    const char* motorNames[] = {"MG1", "MG2", "Both", "Blend"};
+    // Order must match VCU MotActive enum: 0=Mg1and2, 1=Mg1, 2=Mg2, 3=BlendingMG2and1
+    const char* motorNames[] = {"Both", "MG1", "MG2", "Blend"};
     const int pill_w = 48;
     const int pill_h = 22;
     const int pill_gap = 4;
@@ -1231,7 +1232,8 @@ void UIManager::updateMotor() {
     CANParameter* motor = canManager->getParameterByName("MotActive");
     if (motor) {
         int32_t value = motor->getValueAsInt();
-        const char* motorNames[] = {"MG1 only", "MG2 only", "MG1+MG2", "Blended"};
+        // Order must match VCU MotActive enum: 0=Mg1and2, 1=Mg1, 2=Mg2, 3=BlendingMG2and1
+        const char* motorNames[] = {"MG1+MG2", "MG1 only", "MG2 only", "Blended"};
         if (value >= 0 && value < 4) {
             lv_label_set_text(motor_current_label, motorNames[value]);
             for (int i = 0; i < 4; i++) {
