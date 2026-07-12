@@ -2,7 +2,7 @@
 #include "CANMonitor.h"
 #include "Config.h"
 #include "driver/twai.h"
-#include <SPIFFS.h>
+#include <LittleFS.h>
 
 // Static instance pointer for SDO callback
 CANDataManager* CANDataManager::instance = nullptr;
@@ -297,7 +297,7 @@ FetchResult CANDataManager::fetchParamsAttempt() {
     }
 
     // Step 5: Save to SPIFFS
-    File f = SPIFFS.open("/params.json", "w");
+    File f = LittleFS.open("/params.json", "w");
     if (f) {
         f.print(jsonBuffer);
         f.close();

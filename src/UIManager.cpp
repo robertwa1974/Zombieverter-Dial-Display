@@ -2,7 +2,7 @@
 #include "Immobilizer.h"
 #include "HealthChecker.h"
 #include "EfficiencyTracker.h"
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <esp_heap_caps.h>
 #include "FaultLogger.h"
 #include <M5GFX.h>
@@ -283,8 +283,8 @@ void UIManager::createSplashScreen() {
     // /logo.bin: 4-byte header (uint16 w, uint16 h) + raw RGB565 pixels
     bool logoLoaded = false;
 
-    if (SPIFFS.exists("/logo.bin")) {
-        File f = SPIFFS.open("/logo.bin", "r");
+    if (LittleFS.exists("/logo.bin")) {
+        File f = LittleFS.open("/logo.bin", "r");
         if (f) {
             uint16_t w = 0, h = 0;
             f.read((uint8_t*)&w, 2);
@@ -391,11 +391,11 @@ void UIManager::reloadLogo() {
         splash_logo_img = nullptr;
     }
 
-    if (!SPIFFS.exists("/logo.bin")) {
+    if (!LittleFS.exists("/logo.bin")) {
         Serial.println("[SPLASH] reloadLogo: no logo.bin");
         return;
     }
-    File f = SPIFFS.open("/logo.bin", "r");
+    File f = LittleFS.open("/logo.bin", "r");
     if (!f) return;
 
     uint16_t w = 0, h = 0;

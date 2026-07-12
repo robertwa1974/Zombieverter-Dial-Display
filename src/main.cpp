@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include "Config.h"
 #include "Hardware.h"
@@ -517,7 +517,7 @@ void setup() {
     Serial.println("Hardware initialized");
     #endif
 
-    SPIFFS.begin(true);  // Must be before uiManager.init so /logo.bin is visible at splash creation
+    LittleFS.begin(true);  // Must be before uiManager.init so /logo.bin is visible at splash creation
 
     uiManager.init(&canManager, &immobilizer);
     uiManager.setVersionInfo(DIAL_FW_VERSION, UI_VERSION);
@@ -624,14 +624,14 @@ void setup() {
         Serial.println("[Fetch] Auto-fetch disabled — loading from SPIFFS or defaults");
     }
 
-    // SPIFFS fallback (used when fetch disabled, failed, or skipped due to low heap)
-    if (!paramsLoaded && SPIFFS.exists("/params.json")) {
-        File paramFile = SPIFFS.open("/params.json", "r");
+    // LittleFS fallback (used when fetch disabled, failed, or skipped due to low heap)
+    if (!paramsLoaded && LittleFS.exists("/params.json")) {
+        File paramFile = LittleFS.open("/params.json", "r");
         if (paramFile) {
             size_t fileSize = paramFile.size();
             if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
                 if (canManager.loadParametersFromJSON(paramFile)) {
-                    Serial.printf("[Params] Loaded %d from SPIFFS\n", canManager.getParameterCount());
+                    Serial.printf("[Params] Loaded %d from LittleFS\n", canManager.getParameterCount());
                     paramsLoaded = true;
                     uiManager.showFetchStatus("Cached params\nloaded OK");
                     delay(1000);
@@ -639,7 +639,7 @@ void setup() {
                 paramFile.close();
             } else {
                 paramFile.close();
-                SPIFFS.remove("/params.json");
+                LittleFS.remove("/params.json");
             }
         }
     }

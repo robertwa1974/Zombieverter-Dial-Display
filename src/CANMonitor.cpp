@@ -174,9 +174,9 @@ void CANMonitor::startLogging() {
     if (logState == LogState::LOGGING) return;
 
     // Remove old log
-    if (SPIFFS.exists("/canlog.csv")) SPIFFS.remove("/canlog.csv");
+    if (LittleFS.exists("/canlog.csv")) LittleFS.remove("/canlog.csv");
 
-    logFile = SPIFFS.open("/canlog.csv", "w");
+    logFile = LittleFS.open("/canlog.csv", "w");
     if (!logFile) {
         Serial.println("[CANMonitor] Failed to open /canlog.csv for writing");
         return;
@@ -599,16 +599,16 @@ void CANMonitor::handleLogStop(AsyncWebServerRequest* request) {
     snprintf(resp, sizeof(resp),
         "{\"ok\":true,\"state\":\"stopped\",\"frames\":%u,\"sizeBytes\":%u}",
         logFrameCount,
-        SPIFFS.exists("/canlog.csv") ? (unsigned)SPIFFS.open("/canlog.csv").size() : 0);
+        LittleFS.exists("/canlog.csv") ? (unsigned)LittleFS.open("/canlog.csv").size() : 0);
     request->send(200, "application/json", resp);
 }
 
 void CANMonitor::handleLogDownload(AsyncWebServerRequest* request) {
-    if (!SPIFFS.exists("/canlog.csv")) {
+    if (!LittleFS.exists("/canlog.csv")) {
         request->send(404, "text/plain", "No log file");
         return;
     }
-    request->send(SPIFFS, "/canlog.csv", "text/csv",
+    request->send(LittleFS, "/canlog.csv", "text/csv",
         true);  // true = download (Content-Disposition: attachment)
 }
 

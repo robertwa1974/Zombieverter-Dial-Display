@@ -13,7 +13,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "driver/twai.h"
