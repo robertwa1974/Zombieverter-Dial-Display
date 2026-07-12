@@ -630,14 +630,13 @@ void setup() {
         if (paramFile) {
             size_t fileSize = paramFile.size();
             if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
-                String jsonContent = paramFile.readString();
-                paramFile.close();
-                if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
+                if (canManager.loadParametersFromJSON(paramFile)) {
                     Serial.printf("[Params] Loaded %d from SPIFFS\n", canManager.getParameterCount());
                     paramsLoaded = true;
                     uiManager.showFetchStatus("Cached params\nloaded OK");
                     delay(1000);
                 }
+                paramFile.close();
             } else {
                 paramFile.close();
                 SPIFFS.remove("/params.json");

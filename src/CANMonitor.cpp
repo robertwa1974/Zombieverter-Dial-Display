@@ -112,12 +112,14 @@ void CANMonitor::pushFrame(const twai_message_t& msg) {
     sessionFrameCount++;
 
     // Decode once — used by both logging and WebSocket
-    String decoded = (logState == LogState::LOGGING || clientCount > 0)
-                     ? decodeFrame(f) : String("");
+    char decodedBuf[80] = {0};
+    if (logState == LogState::LOGGING || clientCount > 0) {
+        decodeFrame(f, decodedBuf, sizeof(decodedBuf));
+    }
 
     // Write to CSV log if logging
     if (logState == LogState::LOGGING) {
-        writeCSVRow(f, decoded);
+        writeCSVRow(f, decodedBuf);
         logFrameCount++;
     }
 
@@ -129,7 +131,9 @@ void CANMonitor::pushFrame(const twai_message_t& msg) {
             for (uint8_t i = 0; i < idStatCount; i++) {
                 if (idStats[i].id == f.id) { cnt = idStats[i].count; break; }
             }
-            enqueueWsMsg(frameToJson(f, decoded, cnt));
+            char jsonBuf[300] = {0};
+            frameToJson(f, decodedBuf, cnt, jsonBuf, sizeof(jsonBuf));
+            enqueueWsMsg(jsonBuf);
         }
     }
     flushWsQueue();
@@ -193,7 +197,7 @@ void CANMonitor::stopLogging() {
     Serial.printf("[CANMonitor] Logging stopped — %u frames\n", logFrameCount);
 }
 
-void CANMonitor::writeCSVRow(const CANFrame& f, const String& decoded) {
+void CANMonitor::writeCSVRow(const CANFrame& f, const char* decoded) {
     if (!logFile) return;
     const char* name = knownIDName(f.id);
 
@@ -206,7 +210,7 @@ void CANMonitor::writeCSVRow(const CANFrame& f, const String& decoded) {
         f.len,
         f.data[0], f.data[1], f.data[2], f.data[3],
         f.data[4], f.data[5], f.data[6], f.data[7],
-        decoded.c_str()
+        decoded
     );
     logFile.println(row);
 }
@@ -215,8 +219,9 @@ void CANMonitor::writeCSVRow(const CANFrame& f, const String& decoded) {
 // Decoder
 // =============================================================================
 
-String CANMonitor::decodeFrame(const CANFrame& f) {
-    char buf[80];
+void CANMonitor::decodeFrame(const CANFrame& f, char* outBuf, size_t outLen) {
+    if (!outBuf || outLen == 0) return;
+    outBuf[0] = '\0';
 
     switch (f.id) {
         case 0x583: {
@@ -227,10 +232,10 @@ String CANMonitor::decodeFrame(const CANFrame& f) {
             int32_t val  = (int32_t)(f.data[4] | (f.data[5]<<8) |
                                      (f.data[6]<<16) | (f.data[7]<<24));
             if (cmd == 0x80) {
-                snprintf(buf, sizeof(buf), "ABORT idx=0x%04X sub=%d err=0x%08X",
+                snprintf(outBuf, outLen, "ABORT idx=0x%04X sub=%d err=0x%08X",
                     idx, sub, (unsigned)val);
             } else if (cmd == 0x60) {
-                snprintf(buf, sizeof(buf), "WRITE ACK idx=0x%04X sub=%d", idx, sub);
+                snprintf(outBuf, outLen, "WRITE ACK idx=0x%04X sub=%d", idx, sub);
             } else {
                 // Read response — look up param name
                 float fval = val / 32.0f;
@@ -242,13 +247,13 @@ String CANMonitor::decodeFrame(const CANFrame& f) {
                     if (p) paramName = p->name;
                 }
                 if (paramName) {
-                    snprintf(buf, sizeof(buf), "READ %s = %.2f", paramName, fval);
+                    snprintf(outBuf, outLen, "READ %s = %.2f", paramName, fval);
                 } else {
-                    snprintf(buf, sizeof(buf), "READ idx=0x%04X sub=%d val=%.2f",
+                    snprintf(outBuf, outLen, "READ idx=0x%04X sub=%d val=%.2f",
                         idx, sub, fval);
                 }
             }
-            return String(buf);
+            break;
         }
 
         case 0x603: {
@@ -257,121 +262,121 @@ String CANMonitor::decodeFrame(const CANFrame& f) {
             uint16_t idx = f.data[1] | (f.data[2] << 8);
             uint8_t sub  = f.data[3];
             if (cmd == 0x40) {
-                snprintf(buf, sizeof(buf), "READ REQ idx=0x%04X sub=%d", idx, sub);
+                snprintf(outBuf, outLen, "READ REQ idx=0x%04X sub=%d", idx, sub);
             } else if (cmd == 0x23) {
                 int32_t val = (int32_t)(f.data[4] | (f.data[5]<<8) |
                                         (f.data[6]<<16) | (f.data[7]<<24));
-                snprintf(buf, sizeof(buf), "WRITE REQ idx=0x%04X sub=%d val=%d (%.2f)",
+                snprintf(outBuf, outLen, "WRITE REQ idx=0x%04X sub=%d val=%d (%.2f)",
                     idx, sub, val, val / 32.0f);
             } else if (cmd == 0x60) {
-                snprintf(buf, sizeof(buf), "SEGMENT REQ toggle=%d",
+                snprintf(outBuf, outLen, "SEGMENT REQ toggle=%d",
                     (f.data[0] >> 4) & 1);
             } else {
-                snprintf(buf, sizeof(buf), "SDO cmd=0x%02X", cmd);
+                snprintf(outBuf, outLen, "SDO cmd=0x%02X", cmd);
             }
-            return String(buf);
+            break;
         }
 
         case 0x355: {
             int16_t soc = f.data[0] | (f.data[1] << 8);
-            snprintf(buf, sizeof(buf), "SOC=%d%%", soc);
-            return String(buf);
+            snprintf(outBuf, outLen, "SOC=%d%%", soc);
+            break;
         }
 
         case 0x356: {
             int16_t tmpm = (int16_t)(f.data[4] | (f.data[5] << 8));
-            snprintf(buf, sizeof(buf), "Motor temp=%d°C", tmpm);
-            return String(buf);
+            snprintf(outBuf, outLen, "Motor temp=%d°C", tmpm);
+            break;
         }
 
         case 0x126: {
             int16_t tmphs = (int16_t)(f.data[4] | (f.data[5] << 8));
-            snprintf(buf, sizeof(buf), "Inverter temp=%d°C", tmphs);
-            return String(buf);
+            snprintf(outBuf, outLen, "Inverter temp=%d°C", tmphs);
+            break;
         }
 
         case 0x257: {
             int16_t spd = (int16_t)(f.data[0] | (f.data[1] << 8));
-            snprintf(buf, sizeof(buf), "Speed=%d rpm", spd);
-            return String(buf);
+            snprintf(outBuf, outLen, "Speed=%d rpm", spd);
+            break;
         }
 
         case 0x521: {
             int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "U1=%.1fV", mv / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "U1=%.1fV", mv / 1000.0f);
+            break;
         }
         case 0x522: {
             // IVT-S: bytes 2-4 = 24-bit little-endian value in mV
             int32_t mv = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16));
             if (mv & 0x800000) mv |= 0xFF000000;  // sign extend
-            snprintf(buf, sizeof(buf), "Voltage=%.1fV", mv / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "Voltage=%.1fV", mv / 1000.0f);
+            break;
         }
         case 0x523: {
             int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "U3=%.1fV", mv / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "U3=%.1fV", mv / 1000.0f);
+            break;
         }
         case 0x524: {
             int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "U4=%.1fV", mv / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "U4=%.1fV", mv / 1000.0f);
+            break;
         }
         case 0x525: {
             int32_t ma = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (ma & 0x800000) ma |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "I2=%.2fA", ma / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "I2=%.2fA", ma / 1000.0f);
+            break;
         }
         case 0x526: {
             int32_t dt = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (dt & 0x800000) dt |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "Temp=%.1f°C", dt / 10.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "Temp=%.1f°C", dt / 10.0f);
+            break;
         }
         case 0x527: {
             int32_t pw = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (pw & 0x800000) pw |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "Power=%.1fkW", pw / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "Power=%.1fkW", pw / 1000.0f);
+            break;
         }
         case 0x528: {
             int32_t as = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
             if (as & 0x800000) as |= 0xFF000000;
-            snprintf(buf, sizeof(buf), "Charge=%.1fAs", as / 10.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "Charge=%.1fAs", as / 10.0f);
+            break;
         }
 
         case 0x411: {
             // IVT-S: bytes 2-4 = 24-bit little-endian value in mA
             int32_t ma = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16));
             if (ma & 0x800000) ma |= 0xFF000000;  // sign extend
-            snprintf(buf, sizeof(buf), "Current=%.2fA", ma / 1000.0f);
-            return String(buf);
+            snprintf(outBuf, outLen, "Current=%.2fA", ma / 1000.0f);
+            break;
         }
 
         case 0x373: {
             uint16_t vmin = f.data[0] | (f.data[1] << 8);
             uint16_t vmax = f.data[2] | (f.data[3] << 8);
-            snprintf(buf, sizeof(buf), "Vmin=%umV Vmax=%umV delta=%umV",
+            snprintf(outBuf, outLen, "Vmin=%umV Vmax=%umV delta=%umV",
                 vmin, vmax, vmax - vmin);
-            return String(buf);
+            break;
         }
 
         case 0x35E: {
             // BMS name — ASCII string
             char name[9] = {0};
             for (int i = 0; i < 8 && i < (int)f.len; i++) name[i] = f.data[i];
-            snprintf(buf, sizeof(buf), "BMS=%s", name);
-            return String(buf);
+            snprintf(outBuf, outLen, "BMS=%s", name);
+            break;
         }
 
         default:
-            return String("");
+            break;
     }
 }
 
@@ -379,12 +384,12 @@ String CANMonitor::decodeFrame(const CANFrame& f) {
 // Frame → JSON
 // =============================================================================
 
-String CANMonitor::frameToJson(const CANFrame& f, const String& decoded,
-                                uint32_t countForID) {
-    char json[300];
+void CANMonitor::frameToJson(const CANFrame& f, const char* decoded,
+                             uint32_t countForID, char* outJson, size_t outLen) {
+    if (!outJson || outLen == 0) return;
     const char* name = knownIDName(f.id);
 
-    snprintf(json, sizeof(json),
+    snprintf(outJson, outLen,
         "{\"t\":%u,\"id\":\"0x%03X\",\"name\":\"%s\",\"len\":%d,"
         "\"data\":[%d,%d,%d,%d,%d,%d,%d,%d],"
         "\"decoded\":\"%s\",\"count\":%u}",
@@ -394,22 +399,21 @@ String CANMonitor::frameToJson(const CANFrame& f, const String& decoded,
         f.len,
         f.data[0], f.data[1], f.data[2], f.data[3],
         f.data[4], f.data[5], f.data[6], f.data[7],
-        decoded.c_str(),
+        decoded ? decoded : "",
         countForID
     );
-    return String(json);
 }
 
 // =============================================================================
 // WebSocket send queue — enqueue from anywhere, flush from main loop only
 // =============================================================================
 
-void CANMonitor::enqueueWsMsg(const String& json) {
-    if (!wsQMutex) return;
+void CANMonitor::enqueueWsMsg(const char* json) {
+    if (!wsQMutex || !json) return;
     if (xSemaphoreTake(wsQMutex, 0) == pdTRUE) {
         uint8_t next = (wsQHead + 1) % WS_QUEUE_SIZE;
         if (next != wsQTail) {  // not full
-            strncpy(wsQueue[wsQHead].json, json.c_str(), 299);
+            strncpy(wsQueue[wsQHead].json, json, 299);
             wsQueue[wsQHead].json[299] = '\0';
             wsQHead = next;
         }
@@ -609,12 +613,9 @@ void CANMonitor::handleLogDownload(AsyncWebServerRequest* request) {
 }
 
 void CANMonitor::handleStats(AsyncWebServerRequest* request) {
-    // Build stats JSON
-    String json = "{\"sessionFrames\":";
-    json += sessionFrameCount;
-    json += ",\"uptime\":";
-    json += (millis() - sessionStartMs);
-    json += ",\"ids\":[";
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->printf("{\"sessionFrames\":%u,\"uptime\":%u,\"ids\":[", 
+                     sessionFrameCount, (millis() - sessionStartMs));
 
     // Sort by count (simple selection sort for small array)
     uint8_t order[MAX_ID_STATS];
@@ -629,19 +630,13 @@ void CANMonitor::handleStats(AsyncWebServerRequest* request) {
 
     uint8_t shown = min((uint8_t)10, idStatCount);
     for (uint8_t i = 0; i < shown; i++) {
-        if (i) json += ",";
+        if (i) response->print(",");
         const CANIDStat& s = idStats[order[i]];
         const char* name = knownIDName(s.id);
-        json += "{\"id\":\"0x";
-        char hex[8]; snprintf(hex, sizeof(hex), "%03X", s.id);
-        json += hex;
-        json += "\",\"name\":\"";
-        json += name ? name : "";
-        json += "\",\"count\":";
-        json += s.count;
-        json += "}";
+        response->printf("{\"id\":\"0x%03X\",\"name\":\"%s\",\"count\":%u}",
+                         s.id, name ? name : "", s.count);
     }
-    json += "]}";
+    response->print("]}");
 
-    request->send(200, "application/json", json);
+    request->send(response);
 }

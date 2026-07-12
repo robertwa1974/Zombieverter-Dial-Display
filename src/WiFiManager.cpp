@@ -1060,11 +1060,23 @@ void WiFiManager::handleValue(AsyncWebServerRequest* request) {
 // Returns the full trip log as a CSV download (chronological, ring buffer order)
 // ---------------------------------------------------------------------------
 void WiFiManager::handleTripLog(AsyncWebServerRequest* request) {
-    String csv = TripLogger::getInstance().getCSV();
-    AsyncWebServerResponse* resp = request->beginResponse(200, "text/csv", csv);
+    AsyncWebServerResponse* resp = request->beginChunkedResponse("text/csv", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+        static int rowNum = 0;
+        if (index == 0) {
+            rowNum = 0;
+            TripLogger::getInstance().getCSVHeader((char*)buffer, maxLen);
+            return strlen((char*)buffer);
+        }
+        TripEntry e;
+        if (TripLogger::getInstance().getEntry(rowNum - 1, e)) {
+            TripLogger::getInstance().entryToCSVRow(e, rowNum, (char*)buffer, maxLen);
+            rowNum++;
+            return strlen((char*)buffer);
+        }
+        return 0; // finished
+    });
     resp->addHeader("Content-Disposition", "attachment; filename=\"trip_log.csv\"");
     resp->addHeader("Access-Control-Allow-Origin", "*");
-    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1084,11 +1096,37 @@ void WiFiManager::handleTripLogDelete(AsyncWebServerRequest* request) {
 // Returns NVS fault/opmode log as JSON array, newest first
 // ---------------------------------------------------------------------------
 void WiFiManager::handleFaultLog(AsyncWebServerRequest* request) {
-    String json = FaultLogger::getInstance().getJSON();
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    AsyncWebServerResponse* resp = request->beginChunkedResponse("application/json", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+        static int cursor = 0;
+        if (index == 0) {
+            cursor = 0;
+            snprintf((char*)buffer, maxLen, "[");
+            return 1;
+        }
+        int count = FaultLogger::getInstance().getCount();
+        if (cursor < count) {
+            char itemBuf[256];
+            FaultEntry e;
+            if (FaultLogger::getInstance().getEntry(cursor, e)) {
+                FaultLogger::getInstance().entryToJSON(e, cursor, itemBuf, sizeof(itemBuf));
+                cursor++;
+                if (cursor < count) {
+                    snprintf((char*)buffer, maxLen, "%s,", itemBuf);
+                } else {
+                    snprintf((char*)buffer, maxLen, "%s", itemBuf);
+                }
+                return strlen((char*)buffer);
+            }
+        }
+        if (cursor == count) {
+            cursor++;
+            snprintf((char*)buffer, maxLen, "]");
+            return 1;
+        }
+        return 0; // finished
+    });
     resp->addHeader("Access-Control-Allow-Origin", "*");
     resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1119,16 +1157,11 @@ void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
     bool     fetchOnBoot  = prefs.getBool("fetchOnBoot",  false);
     prefs.end();
 
-    String json = "{\"finalDrive\":"   + String(finalDrive, 2) +
-                  ",\"wheelCirc\":"    + String(wheelCirc,  2) +
-                  ",\"screenMask\":"   + String(screenMask)    +
-                  ",\"immobEnabled\":" + String(immobEnabled ? "true" : "false") +
-                  ",\"immobWriteId\":" + String(immobWriteId) +
-                  ",\"immobReadId\":"  + String(immobReadId)  +
-                  ",\"fetchOnBoot\":"  + String(fetchOnBoot ? "true" : "false") + "}";
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    request->send(resp);
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->printf("{\"finalDrive\":%.2f,\"wheelCirc\":%.2f,\"screenMask\":%u,\"immobEnabled\":%s,\"immobWriteId\":%u,\"immobReadId\":%u,\"fetchOnBoot\":%s}",
+                     finalDrive, wheelCirc, screenMask, immobEnabled ? "true" : "false", immobWriteId, immobReadId, fetchOnBoot ? "true" : "false");
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -1244,28 +1277,24 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
 // No SPIFFS, no deserialization — just loop over parameters[] array
 // ---------------------------------------------------------------------------
 void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
-    String json = "{";
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->print("{");
     bool first = true;
-    uint16_t count = can->getParameterCount();
+    uint16_t count = can ? can->getParameterCount() : 0;
 
     for (uint16_t i = 0; i < count; i++) {
         CANParameter* p = can->getParameterByIndex(i);
         if (!p || p->lastUpdateTime == 0) continue;
 
-        if (!first) json += ",";
-        json += "\"";
-        json += p->name;
-        json += "\":";
-        json += p->valueInt;
+        if (!first) response->print(",");
+        response->printf("\"%s\":%d", p->name, p->valueInt);
         first = false;
     }
-    json += "}";
+    response->print("}");
 
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "close");
-    request->send(resp);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Cache-Control", "no-cache");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,22 +1303,16 @@ void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
 // ---------------------------------------------------------------------------
 void WiFiManager::handleHealthSettingsGet(AsyncWebServerRequest* request) {
     HealthChecker& hc = HealthChecker::getInstance();
-    String json = "{";
-    json += "\"failBehav\":"   + String((int)hc.getFailBehaviour())  + ",";
-    json += "\"cdWarn\":"      + String(hc.getCellDeltaWarn(),  1)   + ",";
-    json += "\"cdFail\":"      + String(hc.getCellDeltaFail(),  1)   + ",";
-    json += "\"mcWarn\":"      + String(hc.getMinCellWarn(),    3)   + ",";
-    json += "\"mcFail\":"      + String(hc.getMinCellFail(),    3)   + ",";
-    json += "\"mtWarn\":"      + String(hc.getMotorTempWarn(),  1)   + ",";
-    json += "\"mtFail\":"      + String(hc.getMotorTempFail(),  1)   + ",";
-    json += "\"itWarn\":"      + String(hc.getInvTempWarn(),    1)   + ",";
-    json += "\"itFail\":"      + String(hc.getInvTempFail(),    1)   + ",";
-    json += "\"pvWarn\":"      + String(hc.getPackVoltWarn(),   1)   + ",";
-    json += "\"pvFail\":"      + String(hc.getPackVoltFail(),   1);
-    json += "}";
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    request->send(resp);
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->printf("{\"failBehav\":%d,\"cdWarn\":%.1f,\"cdFail\":%.1f,\"mcWarn\":%.3f,\"mcFail\":%.3f,\"mtWarn\":%.1f,\"mtFail\":%.1f,\"itWarn\":%.1f,\"itFail\":%.1f,\"pvWarn\":%.1f,\"pvFail\":%.1f}",
+                     (int)hc.getFailBehaviour(),
+                     hc.getCellDeltaWarn(), hc.getCellDeltaFail(),
+                     hc.getMinCellWarn(), hc.getMinCellFail(),
+                     hc.getMotorTempWarn(), hc.getMotorTempFail(),
+                     hc.getInvTempWarn(), hc.getInvTempFail(),
+                     hc.getPackVoltWarn(), hc.getPackVoltFail());
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------

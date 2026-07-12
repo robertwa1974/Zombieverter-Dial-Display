@@ -439,6 +439,16 @@ void CANDataManager::setParameter(uint16_t paramId, int32_t value) {
 //           (openinverter/ZombieVerter VCU direct export)
 // ============================================================================
 
+bool CANDataManager::loadParametersFromJSON(Stream& stream) {
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, stream);
+    if (error) {
+        Serial.printf("[CAN] JSON parse failed: %s\n", error.c_str());
+        return false;
+    }
+    return loadParametersFromDoc(doc);
+}
+
 bool CANDataManager::loadParametersFromJSON(const char* jsonString) {
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, jsonString);
@@ -446,7 +456,10 @@ bool CANDataManager::loadParametersFromJSON(const char* jsonString) {
         Serial.printf("[CAN] JSON parse failed: %s\n", error.c_str());
         return false;
     }
+    return loadParametersFromDoc(doc);
+}
 
+bool CANDataManager::loadParametersFromDoc(JsonDocument& doc) {
     parameterCount = 0;
 
     if (doc["parameters"].is<JsonArray>()) {
