@@ -14,15 +14,15 @@ const char* CANMonitor::knownIDName(uint32_t id) {
         case 0x356: return "Motor Temp";
         case 0x126: return "Inverter Temp";
         case 0x257: return "Speed";
-        case 0x521: return "IVT-S U1";
-        case 0x522: return "IVT-S U2 (Battery V)";
-        case 0x523: return "IVT-S U3";
-        case 0x524: return "IVT-S U4";
-        case 0x525: return "IVT-S I2";
-        case 0x526: return "IVT-S Temp";
-        case 0x527: return "IVT-S Power";
-        case 0x528: return "IVT-S Charge";
-        case 0x411: return "Current (IVT-S)";
+        case 0x521: return "IVT-S Current";
+        case 0x522: return "IVT-S U1 (Battery V)";
+        case 0x523: return "IVT-S U2";
+        case 0x524: return "IVT-S U3";
+        case 0x525: return "IVT-S Temp";
+        case 0x526: return "IVT-S Power";
+        case 0x527: return "IVT-S Capacity";
+        case 0x528: return "IVT-S Energy";
+        case 0x411: return "Command (IVT-S)";
         case 0x373: return "BMS Cell Voltages";
         case 0x351: return "BMS Limits";
         case 0x35A: return "BMS Status";
@@ -302,60 +302,56 @@ void CANMonitor::decodeFrame(const CANFrame& f, char* outBuf, size_t outLen) {
         }
 
         case 0x521: {
-            int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(outBuf, outLen, "U1=%.1fV", mv / 1000.0f);
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in mA
+            int32_t ma = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "Current=%.2fA", ma / 1000.0f);
             break;
         }
         case 0x522: {
-            // IVT-S: bytes 2-4 = 24-bit little-endian value in mV
-            int32_t mv = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16));
-            if (mv & 0x800000) mv |= 0xFF000000;  // sign extend
-            snprintf(outBuf, outLen, "Voltage=%.1fV", mv / 1000.0f);
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in mV (U1)
+            int32_t mv = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "U1=%.1fV", mv / 1000.0f);
             break;
         }
         case 0x523: {
-            int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(outBuf, outLen, "U3=%.1fV", mv / 1000.0f);
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in mV (U2)
+            int32_t mv = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "U2=%.1fV", mv / 1000.0f);
             break;
         }
         case 0x524: {
-            int32_t mv = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (mv & 0x800000) mv |= 0xFF000000;
-            snprintf(outBuf, outLen, "U4=%.1fV", mv / 1000.0f);
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in mV (U3)
+            int32_t mv = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "U3=%.1fV", mv / 1000.0f);
             break;
         }
         case 0x525: {
-            int32_t ma = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (ma & 0x800000) ma |= 0xFF000000;
-            snprintf(outBuf, outLen, "I2=%.2fA", ma / 1000.0f);
-            break;
-        }
-        case 0x526: {
-            int32_t dt = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (dt & 0x800000) dt |= 0xFF000000;
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in 0.1 C (Temp)
+            int32_t dt = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
             snprintf(outBuf, outLen, "Temp=%.1f°C", dt / 10.0f);
             break;
         }
-        case 0x527: {
-            int32_t pw = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (pw & 0x800000) pw |= 0xFF000000;
+        case 0x526: {
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in Watts (Power)
+            int32_t pw = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
             snprintf(outBuf, outLen, "Power=%.1fkW", pw / 1000.0f);
             break;
         }
+        case 0x527: {
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in As (Capacity)
+            int32_t as = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "Capacity=%.1fAs", as / 10.0f);
+            break;
+        }
         case 0x528: {
-            int32_t as = (int32_t)(f.data[2] | (f.data[3]<<8) | (f.data[4]<<16));
-            if (as & 0x800000) as |= 0xFF000000;
-            snprintf(outBuf, outLen, "Charge=%.1fAs", as / 10.0f);
+            // IVT-S: bytes 2-5 = 32-bit little-endian value in Wh (Energy)
+            int32_t wh = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16) | (f.data[5] << 24));
+            snprintf(outBuf, outLen, "Energy=%.1fkWh", wh / 1000.0f);
             break;
         }
 
         case 0x411: {
-            // IVT-S: bytes 2-4 = 24-bit little-endian value in mA
-            int32_t ma = (int32_t)(f.data[2] | (f.data[3] << 8) | (f.data[4] << 16));
-            if (ma & 0x800000) ma |= 0xFF000000;  // sign extend
-            snprintf(outBuf, outLen, "Current=%.2fA", ma / 1000.0f);
+            snprintf(outBuf, outLen, "Command Frame");
             break;
         }
 
