@@ -15,6 +15,7 @@
 #include "EfficiencyTracker.h"
 #include "Immobilizer.h"
 #include "SDOManager.h"
+#include <esp_task_wdt.h>
 
 // ── Firmware version strings — update on each release ────────────────────────
 #define DIAL_FW_VERSION   "v2.5.4"   // M5Dial firmware version
@@ -720,6 +721,13 @@ void setup() {
 
     systemReady = true;
 
+    // Initialize ESP-IDF Task Watchdog Timer (3 seconds, panic/reset = true)
+    #if DEBUG_SERIAL
+    Serial.println("[Main] Initializing Task Watchdog (3s)...");
+    #endif
+    esp_task_wdt_init(3, true);
+    esp_task_wdt_add(NULL); // Add current task (main loopTask) to TWDT
+
     #if DEBUG_SERIAL
     Serial.println("System ready!");
     Serial.println("=============================================");
@@ -871,6 +879,9 @@ void loop() {
     pollNextSDOParam();
 
     uiManager.update();
+
+    // Feed the Task Watchdog Timer
+    esp_task_wdt_reset();
 
     vTaskDelay(pdMS_TO_TICKS(10));
 }
