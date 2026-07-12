@@ -651,31 +651,29 @@ void CANDataManager::handleGenericMessage(CANMessage& msg) {
         return;
     }
 
-    // IVT-S shunt — 24-bit signed value in bytes 2-4, little-endian
-    auto ivt24 = [](const CANMessage& m) -> int32_t {
-        int32_t v = m.data[2] | (m.data[3] << 8) | (m.data[4] << 16);
-        if (v & 0x800000) v |= 0xFF000000;
-        return v;
+    // IVT-S shunt — 32-bit signed value in bytes 2-5, little-endian
+    auto ivt32 = [](const CANMessage& m) -> int32_t {
+        return (int32_t)(m.data[2] | (m.data[3] << 8) | (m.data[4] << 16) | (m.data[5] << 24));
     };
 
-    if (msg.id == 0x522 && msg.length == 6) {
+    if (msg.id == 0x522 && msg.length >= 6) {
         CANParameter* p = getParameterByName("udc");
-        if (p) p->setValue(ivt24(msg) / 1000);
+        if (p) p->setValue(ivt32(msg) / 1000);
         return;
     }
-    if (msg.id == 0x411 && msg.length == 6) {
+    if (msg.id == 0x521 && msg.length >= 6) {
         CANParameter* p = getParameterByName("idc");
-        if (p) p->setValue(ivt24(msg) / 1000);
+        if (p) p->setValue(ivt32(msg) / 1000);
         return;
     }
-    if (msg.id == 0x526 && msg.length == 6) {
+    if (msg.id == 0x525 && msg.length >= 6) {
         // shunt temp — no standard VCU param name, skip
         return;
     }
-    // Unused IVT-S channels
-    if ((msg.id == 0x521 || msg.id == 0x523 || msg.id == 0x524 ||
-         msg.id == 0x525 || msg.id == 0x527 || msg.id == 0x528) &&
-        msg.length == 6) { return; }
+    // Unused IVT-S channels (Voltage 2, Voltage 3, kW, Ah, kWh)
+    if ((msg.id == 0x523 || msg.id == 0x524 || msg.id == 0x526 ||
+         msg.id == 0x527 || msg.id == 0x528) &&
+        msg.length >= 6) { return; }
 
     if (msg.id == 0x355 && msg.length >= 2) {
         CANParameter* p = getParameterByName("SOC");
