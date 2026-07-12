@@ -24,7 +24,7 @@ Requires Chrome or Edge. Takes about 60 seconds.
 - **OTA firmware update** — flash new firmware wirelessly from the browser, no USB or development tools needed
 - **Live web values** — `/spot` endpoint merges real-time CAN data into the web parameter list
 - **Automatic parameter fetch** — downloads parameter schema directly from VCU at boot via SDO, no manual file upload needed
-- **Three-tier fallback** — VCU fetch → cached SPIFFS file → built-in defaults
+- **Three-tier fallback** — VCU fetch → cached LittleFS file → built-in defaults
 - **Editable parameters** — Gear, Motor mode, and Regen adjustable from the dial in edit mode
 - **Speed-locked edits** — Gear and Motor changes blocked while vehicle is moving, with on-screen warning
 - **All writes via SDO** — no CAN map configuration required on the VCU
@@ -60,11 +60,10 @@ Pin 4 (Black)  → GND
 | Action | Result |
 |--------|--------|
 | Rotate encoder | Scroll through screens |
-| Button click (telemetry screen) | Enable WiFi mode |
+| Tap WiFi Config screen | Toggle background WiFi AP mode |
 | Button click (Gear/Motor/Regen) | Enter edit mode |
 | Rotate encoder in edit mode | Change value |
 | Button click in edit mode | Exit edit mode, resume scrolling |
-| Rotate encoder in WiFi mode | Exit WiFi mode |
 | Long press button | Return to Dashboard |
 
 ---
@@ -88,7 +87,7 @@ Pin 4 (Black)  → GND
 
 ## WiFi Interface
 
-Press the button on any telemetry screen to enable WiFi mode.
+Navigate to the **WiFi Config** screen on the dial and tap anywhere on the screen to toggle background WiFi AP mode.
 
 - **SSID:** `ZombieVerter-Display`
 - **Password:** `zombieverter`
@@ -128,7 +127,7 @@ cd Zombieverter-Dial-Display
 # Build and upload firmware
 pio run -e m5stack-dial --target upload
 
-# Upload web interface files to SPIFFS
+# Upload web interface files to LittleFS
 pio run -e m5stack-dial --target uploadfs
 ```
 

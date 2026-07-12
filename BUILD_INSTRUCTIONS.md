@@ -30,7 +30,7 @@ pio run -e m5stack-dial
 # Upload firmware
 pio run -e m5stack-dial --target upload
 
-# Upload web interface (SPIFFS filesystem)
+# Upload web interface (LittleFS filesystem)
 pio run -e m5stack-dial --target uploadfs
 
 # Monitor serial output
@@ -55,7 +55,7 @@ Use this to flash a pre-built `factory.bin` without any development tools.
 | `bootloader.bin` | `0x0000` |
 | `partitions.bin` | `0x8000` |
 | `firmware.bin` | `0x10000` |
-| `spiffs.bin` | `0x3F0000` |
+| `littlefs.bin` | `0x3F0000` |
 
 5. Set **BAUD = 921600**, **FLASH SIZE = 64Mbit**
 6. Click **ERASE**, then **START**
@@ -69,7 +69,7 @@ nvs       0x9000    0x5000
 otadata   0xe000    0x2000
 app0      0x10000   0x1F0000
 app1      0x200000  0x1F0000
-spiffs    0x3F0000  0x400000
+spiffs (LittleFS) 0x3F0000  0x400000
 ```
 
 Total flash: 8MB (ESP32-S3).

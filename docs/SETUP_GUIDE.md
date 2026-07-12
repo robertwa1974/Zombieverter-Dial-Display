@@ -104,7 +104,7 @@ The M5Dial is designed for dashboard mounting:
 5. **Configure board settings:**
    - USB CDC On Boot: Enabled
    - Flash Size: 4MB
-   - Partition Scheme: Default 4MB with spiffs
+   - Partition Scheme: Default 4MB with littlefs
 6. **Open main.cpp** from src/ folder
 7. **Upload** via Tools → Upload
 
@@ -371,7 +371,7 @@ Example: User sets 100 → SDO sends 3200 (100 × 32 = 3200)
 **M5Dial (ESP32-S3):**
 - Program Flash: ~1.5MB used (includes all 119 parameter definitions)
 - RAM: ~50KB used (dynamic CAN parameter storage, web server)
-- SPIFFS: Not currently used (reserved for future features)
+- LittleFS: Used for Web UI files, parameters schema cache (params.json), and CAN logs
 - Parameters: NOT stored locally - all queries go to ZombieVerter via SDO
 
 **ZombieVerter:**
