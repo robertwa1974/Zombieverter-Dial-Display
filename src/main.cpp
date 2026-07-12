@@ -323,7 +323,7 @@ void onButtonClick() {
         wifiManager.startAP();
         uiManager.setScreen(SCREEN_WIFI);
         uiManager.updateWifiScreen(wifiManager.getIPAddress());
-        for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
+        for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
         lvglSuspended = true;
         #if DEBUG_SERIAL
         Serial.println("WiFi mode enabled");
@@ -502,7 +502,7 @@ void pollNextSDOParam() {
 void setup() {
     #if DEBUG_SERIAL
     Serial.begin(115200);
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     Serial.println("ZombieVerter Display - M5Stack Dial");
     Serial.println("=============================================");
     #endif
@@ -511,7 +511,7 @@ void setup() {
         #if DEBUG_SERIAL
         Serial.println("Hardware init failed!");
         #endif
-        while (1) delay(100);
+        while (1) vTaskDelay(pdMS_TO_TICKS(100));
     }
     #if DEBUG_SERIAL
     Serial.println("Hardware initialized");
@@ -524,7 +524,7 @@ void setup() {
     uint32_t splashStart = millis();
     while (millis() - splashStart < 2000) {
         lv_timer_handler();
-        delay(5);
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     if (!canManager.init()) {
@@ -589,11 +589,11 @@ void setup() {
             Serial.println("[Fetch] Heap too low — skipping auto-fetch");
             Serial.println("[Fetch] Use web UI Refetch button if params changed");
             uiManager.showFetchStatus("Heap low\nSkipping fetch");
-            delay(1500);
+            vTaskDelay(pdMS_TO_TICKS(1500));
         } else {
             Serial.println("[Fetch] Auto-fetch enabled — attempting VCU download...");
             uiManager.showFetchStatus("Fetching params\nfrom VCU...");
-            for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
+            for (int i = 0; i < 3; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
 
             FetchResult fetchResult = canManager.fetchParamsFromVCU();
 
@@ -611,13 +611,13 @@ void setup() {
                 
                 // Reboot for clean heap state — ensures WiFi/GVRET work reliably
                 uiManager.showFetchStatus("VCU params loaded!\nRebooting...");
-                delay(2000);
+                vTaskDelay(pdMS_TO_TICKS(2000));
                 ESP.restart();
                 // Execution stops here — next boot has clean heap
             } else {
                 Serial.printf("[Fetch] Failed (%d) — trying SPIFFS fallback\n", (int)fetchResult);
                 uiManager.showFetchStatus("VCU unavailable\nLoading cached...");
-                delay(1000);
+                vTaskDelay(pdMS_TO_TICKS(1000));
             }
         }
     } else {
@@ -634,7 +634,7 @@ void setup() {
                     Serial.printf("[Params] Loaded %d from LittleFS\n", canManager.getParameterCount());
                     paramsLoaded = true;
                     uiManager.showFetchStatus("Cached params\nloaded OK");
-                    delay(1000);
+                    vTaskDelay(pdMS_TO_TICKS(1000));
                 }
                 paramFile.close();
             } else {
@@ -648,7 +648,7 @@ void setup() {
     if (!paramsLoaded) {
         Serial.println("[Params] Using sample parameters only");
         uiManager.showFetchStatus("Using defaults\nConnect VCU!");
-        delay(1500);
+        vTaskDelay(pdMS_TO_TICKS(1500));
     }
 
     // Invalidate cache after params load so pointers are resolved fresh on first loop
@@ -732,7 +732,7 @@ void setup() {
     });
 
     // Brief pause so user can see the status message
-    for (int i = 0; i < 100; i++) { lv_timer_handler(); delay(10); }
+    for (int i = 0; i < 100; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
 
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);
@@ -810,7 +810,7 @@ void loop() {
             lvglSuspended = false;
             uiManager.setScreen(SCREEN_SPLASH);
             uiManager.showFetchStatus("Logo updated!");
-            for (int i = 0; i < 150; i++) { lv_timer_handler(); delay(10); }
+            for (int i = 0; i < 150; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
             lvglSuspended = true;
             uiManager.setScreen(SCREEN_WIFI);
         }
@@ -823,7 +823,7 @@ void loop() {
             lvglSuspended = false;
             uiManager.setScreen(SCREEN_SPLASH);
             uiManager.showFetchStatus("Refetching from\nVCU...");
-            for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
+            for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
             lvglSuspended = true;
 
             // Stop SDO manager, run fetch, restart SDO manager
@@ -841,7 +841,7 @@ void loop() {
                 uiManager.showFetchStatus("Refetch failed\nUsing cached");
                 Serial.println("[Main] Refetch failed");
             }
-            for (int i = 0; i < 200; i++) { lv_timer_handler(); delay(10); }
+            for (int i = 0; i < 200; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
             lvglSuspended = true;
             uiManager.setScreen(SCREEN_WIFI);
         }
@@ -925,5 +925,5 @@ void loop() {
         uiManager.update();
     }
 
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
