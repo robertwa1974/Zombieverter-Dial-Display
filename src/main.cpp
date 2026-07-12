@@ -30,7 +30,6 @@ Immobilizer immobilizer;
 // State tracking
 bool systemReady = false;
 bool wifiMode = false;
-bool lvglSuspended = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 uint8_t lastOpmode = 255;  // opmode change detection (255 = uninitialised)
@@ -111,37 +110,11 @@ void onSDOResult(const SDOResult& result) {
 // WiFi mode helpers
 // ============================================================================
 
-void suspendLVGL() {
-    lvglSuspended = true;
-    #if DEBUG_SERIAL
-    Serial.println("[UI] LVGL suspended for WiFi mode");
-    #endif
-}
-
-void resumeLVGL() {
-    lvglSuspended = false;
-    // Force LVGL to redraw everything from scratch
-    lv_obj_invalidate(lv_scr_act());
-    #if DEBUG_SERIAL
-    Serial.println("[UI] LVGL resumed");
-    #endif
-}
-
 // ============================================================================
 // Input callbacks
 // ============================================================================
 
 void onEncoderRotate(int32_t delta) {
-    if (wifiMode) {
-        // Any rotation exits WiFi mode
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        return;
-    }
-
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     // Lock screen
@@ -316,28 +289,6 @@ void onButtonClick() {
         }
         return;
     }
-
-    if (!wifiMode) {
-        wifiMode = true;
-        immobilizer.setBLEEnabled(false);  // pause BLE to avoid radio contention
-        wifiManager.startAP();
-        uiManager.setScreen(SCREEN_WIFI);
-        uiManager.updateWifiScreen(wifiManager.getIPAddress());
-        for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
-        lvglSuspended = true;
-        #if DEBUG_SERIAL
-        Serial.println("WiFi mode enabled");
-        #endif
-    } else {
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        #if DEBUG_SERIAL
-        Serial.println("WiFi mode disabled");
-        #endif
-    }
 }
 
 void onButtonDoubleClick() {
@@ -358,14 +309,6 @@ void onButtonTripleClick() {
 
 void onButtonLongPress() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
-
-    if (wifiMode) {
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        return;
-    }
 
     // Long-press from any screen while unlocked → navigate to lock screen.
     // Actual locking requires a deliberate tap on that screen (two-step safety).
@@ -402,16 +345,6 @@ void onTouchPress(uint16_t x, uint16_t y) {
 }
 
 void onTouchTap(uint16_t x, uint16_t y) {
-    if (wifiMode) {
-        // Touch exits WiFi mode
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        return;
-    }
-
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     // Lock screen handled by onTouchPress — nothing more to do here
@@ -445,6 +378,19 @@ void onTouchTap(uint16_t x, uint16_t y) {
             case 5:  // Change PIN
                 immobilizer.startChangePin();
                 uiManager.setScreen(SCREEN_LOCK);
+                break;
+            case 6:  // Toggle WiFi
+                if (wifiMode) {
+                    wifiMode = false;
+                    wifiManager.stopAP();
+                    immobilizer.setBLEEnabled(true);
+                    uiManager.showSuccess("WiFi Stopped");
+                } else {
+                    wifiMode = true;
+                    wifiManager.startAP();
+                    immobilizer.setBLEEnabled(false);
+                    uiManager.showSuccess("WiFi Started\nBrowse 192.168.4.1");
+                }
                 break;
         }
         return;
@@ -492,6 +438,18 @@ void pollNextSDOParam() {
         if (paramCount > 0) {
             currentParamIndex = (currentParamIndex + 1) % paramCount;
         }
+    }
+}
+
+void networkTask(void* pvParameters) {
+    #if DEBUG_SERIAL
+    Serial.printf("[Main] Network task started on Core %d\n", xPortGetCoreID());
+    #endif
+    for (;;) {
+        if (wifiMode) {
+            wifiManager.update();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
@@ -562,7 +520,6 @@ void setup() {
     CANMonitor::instance().init(&canManager);
 
     wifiMode = false;
-    lvglSuspended = false;
 
     // ---------------------------------------------------------------------------
     // Parameter loading (controlled by fetchOnBoot NVS toggle):
@@ -749,6 +706,18 @@ void setup() {
         uiManager.setScreen(SCREEN_DASHBOARD);
         Serial.println("[Main] Immobilizer disabled — starting at Dashboard");
     }
+
+    // Launch FreeRTOS network task on Core 0
+    xTaskCreatePinnedToCore(
+        networkTask,
+        "NetworkTask",
+        4096,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
     systemReady = true;
 
     #if DEBUG_SERIAL
@@ -797,60 +766,40 @@ void loop() {
     inputManager.update();
     immobilizer.update();
 
-    if (wifiMode) {
-        wifiManager.update();
-        canManager.update();
+    // Handle background logo upload or parameters refetch from Web UI
+    if (wifiManager.isLogoReloadRequested()) {
+        wifiManager.clearLogoReloadRequest();
+        Serial.println("[Main] Logo reload triggered from web UI");
+        uiManager.reloadLogo();
+        uiManager.setScreen(SCREEN_SPLASH);
+        uiManager.showFetchStatus("Logo updated!");
+        for (int i = 0; i < 150; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+        uiManager.setScreen(SCREEN_DASHBOARD);
+    }
 
-        // Handle logo upload — reload the splash screen widget without reboot
-        if (wifiManager.isLogoReloadRequested()) {
-            wifiManager.clearLogoReloadRequest();
-            Serial.println("[Main] Logo reload triggered from web UI");
-            uiManager.reloadLogo();
-            // Briefly show splash with confirmation message, then return to WiFi screen
-            lvglSuspended = false;
-            uiManager.setScreen(SCREEN_SPLASH);
-            uiManager.showFetchStatus("Logo updated!");
-            for (int i = 0; i < 150; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
-            lvglSuspended = true;
-            uiManager.setScreen(SCREEN_WIFI);
+    if (wifiManager.isRefetchRequested()) {
+        wifiManager.clearRefetchRequest();
+        Serial.println("[Main] Refetch triggered from web UI");
+        uiManager.setScreen(SCREEN_SPLASH);
+        uiManager.showFetchStatus("Refetching from\nVCU...");
+        for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+
+        // Stop SDO manager, run fetch, restart SDO manager
+        FetchResult result = canManager.fetchParamsFromVCU();
+
+        // Invalidate param cache — table has been reloaded
+        invalidateParamCache();
+
+        if (result == FetchResult::SUCCESS) {
+            uiManager.showFetchStatus("VCU params\nreloaded!");
+            Serial.printf("[Main] Refetch success — %d params\n",
+                canManager.getParameterCount());
+        } else {
+            uiManager.showFetchStatus("Refetch failed\nUsing cached");
+            Serial.println("[Main] Refetch failed");
         }
-
-        // Handle refetch request from web UI
-        if (wifiManager.isRefetchRequested()) {
-            wifiManager.clearRefetchRequest();
-            Serial.println("[Main] Refetch triggered from web UI");
-            // Show status on dial — briefly resume LVGL
-            lvglSuspended = false;
-            uiManager.setScreen(SCREEN_SPLASH);
-            uiManager.showFetchStatus("Refetching from\nVCU...");
-            for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
-            lvglSuspended = true;
-
-            // Stop SDO manager, run fetch, restart SDO manager
-            FetchResult result = canManager.fetchParamsFromVCU();
-
-            // Invalidate param cache — table has been reloaded
-            invalidateParamCache();
-
-            lvglSuspended = false;
-            if (result == FetchResult::SUCCESS) {
-                uiManager.showFetchStatus("VCU params\nreloaded!");
-                Serial.printf("[Main] Refetch success — %d params\n",
-                    canManager.getParameterCount());
-            } else {
-                uiManager.showFetchStatus("Refetch failed\nUsing cached");
-                Serial.println("[Main] Refetch failed");
-            }
-            for (int i = 0; i < 200; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
-            lvglSuspended = true;
-            uiManager.setScreen(SCREEN_WIFI);
-        }
-
-        // Keep SDO polling running in WiFi mode so spot values stay live
-        pollNextSDOParam();
-
-        vTaskDelay(pdMS_TO_TICKS(5));
-        return;
+        for (int i = 0; i < 200; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+        uiManager.setScreen(SCREEN_DASHBOARD);
     }
 
     // Normal mode: full CAN + LVGL update
@@ -921,9 +870,7 @@ void loop() {
     // Round-robin SDO parameter polling
     pollNextSDOParam();
 
-    if (!lvglSuspended) {
-        uiManager.update();
-    }
+    uiManager.update();
 
     vTaskDelay(pdMS_TO_TICKS(10));
 }

@@ -7,6 +7,8 @@
 #include "FaultLogger.h"
 #include <M5GFX.h>
 
+extern bool wifiMode;
+
 // Static instance for callbacks
 UIManager* UIManager::instance = nullptr;
 
@@ -205,6 +207,15 @@ void UIManager::setScreen(ScreenID screen) {
                                          lv_palette_main(LV_PALETTE_CYAN), 0);
         }
     }
+    // When entering the WiFi screen, update status based on current wifiMode
+    if (screen == SCREEN_WIFI) {
+        if (wifiMode) {
+            updateWifiScreen("192.168.4.1");
+        } else {
+            resetWifiScreen();
+        }
+    }
+
     currentScreen = screen;
     if (screens[screen]) {
         lv_scr_load_anim(screens[screen], LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
@@ -999,7 +1010,7 @@ void UIManager::createWiFiScreen() {
     lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, 35);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(inst, "Click button to deactivate");
+    lv_label_set_text(inst, "Manage via Settings menu");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
@@ -1024,7 +1035,7 @@ void UIManager::createSettingsScreen() {
     lv_obj_set_style_text_color(hint, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -14);
 
-    // ── 6 menu items: 26px each, start y=42, total=156px ─────────────────
+    // ── 7 menu items: 26px each, start y=42, total=182px ─────────────────
     const char* menuLabels[SETTINGS_MENU_COUNT] = {
         LV_SYMBOL_WIFI   "  Pair BLE Beacon",
         LV_SYMBOL_PLUS   "  Program RFID Fob",
@@ -1032,6 +1043,7 @@ void UIManager::createSettingsScreen() {
         LV_SYMBOL_TRASH  "  Clear RFID Fobs",
         LV_SYMBOL_LIST   "  System Info",
         LV_SYMBOL_EDIT   "  Change PIN",
+        LV_SYMBOL_WIFI   "  Toggle WiFi",
     };
 
     const int MENU_START_Y = 42;
@@ -1110,7 +1122,11 @@ void UIManager::updateDashboard() {
 
     CANParameter* voltage = canManager->getParameterByName("udc");
     if (voltage) {
-        lv_label_set_text_fmt(dash_voltage_label, "%dV", voltage->getValueAsInt());
+        if (wifiMode) {
+            lv_label_set_text_fmt(dash_voltage_label, "%dV  " LV_SYMBOL_WIFI, voltage->getValueAsInt());
+        } else {
+            lv_label_set_text_fmt(dash_voltage_label, "%dV", voltage->getValueAsInt());
+        }
     }
 
     CANParameter* soc = canManager->getParameterByName("SOC");
