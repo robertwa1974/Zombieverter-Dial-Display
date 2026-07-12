@@ -351,6 +351,24 @@ void onTouchTap(uint16_t x, uint16_t y) {
     // Lock screen handled by onTouchPress — nothing more to do here
     if (currentScreen == SCREEN_LOCK) return;
 
+    // WiFi Config screen: tap toggles background WiFi state
+    if (currentScreen == SCREEN_WIFI) {
+        if (wifiMode) {
+            wifiMode = false;
+            wifiManager.stopAP();
+            immobilizer.setBLEEnabled(true);
+            uiManager.resetWifiScreen();
+            uiManager.showSuccess("WiFi Stopped");
+        } else {
+            wifiMode = true;
+            wifiManager.startAP();
+            immobilizer.setBLEEnabled(false);
+            uiManager.updateWifiScreen("192.168.4.1");
+            uiManager.showSuccess("WiFi Started\nBrowse 192.168.4.1");
+        }
+        return;
+    }
+
     // Settings screen: tap activates the highlighted menu item.
     // Debounce: ignore taps for 600ms after arrival — rotating the M5Dial
     // capacitive bezel generates spurious touch events while turning.
@@ -379,19 +397,6 @@ void onTouchTap(uint16_t x, uint16_t y) {
             case 5:  // Change PIN
                 immobilizer.startChangePin();
                 uiManager.setScreen(SCREEN_LOCK);
-                break;
-            case 6:  // Toggle WiFi
-                if (wifiMode) {
-                    wifiMode = false;
-                    wifiManager.stopAP();
-                    immobilizer.setBLEEnabled(true);
-                    uiManager.showSuccess("WiFi Stopped");
-                } else {
-                    wifiMode = true;
-                    wifiManager.startAP();
-                    immobilizer.setBLEEnabled(false);
-                    uiManager.showSuccess("WiFi Started\nBrowse 192.168.4.1");
-                }
                 break;
         }
         return;

@@ -224,7 +224,7 @@ private:
     lv_obj_t* settings_param_count_label;
     lv_obj_t* settings_version_label;
     // Settings menu items
-    static const int SETTINGS_MENU_COUNT = 7;
+    static const int SETTINGS_MENU_COUNT = 6;
     lv_obj_t* settings_menu_labels[SETTINGS_MENU_COUNT];
     lv_obj_t* settings_menu_indicators[SETTINGS_MENU_COUNT];
     int       settings_selected_item;      // currently highlighted item

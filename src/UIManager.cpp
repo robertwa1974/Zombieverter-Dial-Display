@@ -1010,7 +1010,7 @@ void UIManager::createWiFiScreen() {
     lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, 35);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(inst, "Manage via Settings menu");
+    lv_label_set_text(inst, "Tap screen to toggle WiFi");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
@@ -1035,7 +1035,7 @@ void UIManager::createSettingsScreen() {
     lv_obj_set_style_text_color(hint, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -14);
 
-    // ── 7 menu items: 26px each, start y=42, total=182px ─────────────────
+    // ── 6 menu items: 26px each, start y=42, total=156px ─────────────────
     const char* menuLabels[SETTINGS_MENU_COUNT] = {
         LV_SYMBOL_WIFI   "  Pair BLE Beacon",
         LV_SYMBOL_PLUS   "  Program RFID Fob",
@@ -1043,7 +1043,6 @@ void UIManager::createSettingsScreen() {
         LV_SYMBOL_TRASH  "  Clear RFID Fobs",
         LV_SYMBOL_LIST   "  System Info",
         LV_SYMBOL_EDIT   "  Change PIN",
-        LV_SYMBOL_WIFI   "  Toggle WiFi",
     };
 
     const int MENU_START_Y = 42;
