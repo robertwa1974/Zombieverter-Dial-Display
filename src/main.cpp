@@ -872,6 +872,17 @@ void loop() {
         g_pPotnorm ? g_pPotnorm->getValueAsInt()            : 0    // potnorm (0-1000)
     );
 
+    // Sync log on connection loss (vehicle powered off)
+    {
+        static bool lastCanConnected = false;
+        bool canConnected = canManager.isConnected();
+        if (lastCanConnected && !canConnected) {
+            Serial.println("[Main] VCU disconnected — syncing trip log to flash");
+            TripLogger::getInstance().sync();
+        }
+        lastCanConnected = canConnected;
+    }
+
     // Opmode change detection — uses cached pointer, no linear search
     if (g_pOpmode) {
         uint8_t opmode = (uint8_t)g_pOpmode->getValueAsInt();

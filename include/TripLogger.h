@@ -59,6 +59,9 @@ public:
     // Erases all entries from NVS
     void clear();
 
+    // Force flush RAM cache to NVS
+    void sync();
+
     int  getEntryCount() const { return _count; }
     int  getCount()      const { return _count; }
     bool isFull()        const { return _count >= TRIPLOG_MAX_ENTRIES; }
@@ -70,7 +73,9 @@ public:
     void entryToCSVRow(const TripEntry& e, int rowNum, char* outBuf, size_t outLen) const;
 
 private:
-    TripLogger() : _count(0), _startIdx(0), _lastLogTime(0) {}
+    TripLogger() : _count(0), _startIdx(0), _lastLogTime(0), _dirty(false), _lastSyncTime(0) {
+        memset(_entries, 0, sizeof(_entries));
+    }
     TripLogger(const TripLogger&) = delete;
     TripLogger& operator=(const TripLogger&) = delete;
 
@@ -78,6 +83,11 @@ private:
     int      _count;       // number of valid entries, capped at MAX
     int      _startIdx;    // slot index of the oldest entry (ring head)
     uint32_t _lastLogTime;
+    
+    // RAM cache
+    TripEntry _entries[TRIPLOG_MAX_ENTRIES];
+    bool      _dirty;
+    uint32_t  _lastSyncTime;
 
     void   writeSlot(int slot, const TripEntry& e);
     bool   readSlot (int slot, TripEntry& e) const;
