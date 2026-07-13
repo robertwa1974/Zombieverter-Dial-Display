@@ -273,9 +273,17 @@ void WiFiManager::update() {
     }
 
     // Deferred PNG decode — runs on loopTask so async_tcp watchdog is never starved
-    if (pngPending && pngBuffer && pngBufLen > 0) {
+    if (pngPending) {
         pngPending = false;
-        Serial.printf("[LOGO] Decoding %u bytes on loopTask...\n", (unsigned)pngBufLen);
+        File rawFile = LittleFS.open("/raw_logo.png", "r");
+        if (!rawFile) {
+            Serial.println("[LOGO] Decode failed — /raw_logo.png missing");
+            logoUploadInProgress = false;
+            return;
+        }
+
+        size_t pngSize = rawFile.size();
+        Serial.printf("[LOGO] Decoding %u bytes on loopTask...\n", (unsigned)pngSize);
 
         s_logoCtx = new LogoUploadCtx();
         s_logoCtx->pngle = pngle_new();
@@ -285,16 +293,20 @@ void WiFiManager::update() {
             pngle_set_init_callback(s_logoCtx->pngle, logo_on_init);
             pngle_set_draw_callback(s_logoCtx->pngle, logo_on_draw);
 
-            const size_t CHUNK = 2048;
+            const size_t CHUNK = 512;
+            uint8_t buf[CHUNK];
             bool error = false;
-            for (size_t off = 0; off < pngBufLen && !error; off += CHUNK) {
-                size_t n = min(CHUNK, pngBufLen - off);
-                if (pngle_feed(s_logoCtx->pngle, pngBuffer + off, n) < 0) {
-                    Serial.printf("[LOGO] pngle error: %s\n", pngle_error(s_logoCtx->pngle));
-                    s_logoCtx->error = true;
-                    error = true;
+
+            while (rawFile.available() && !error) {
+                size_t n = rawFile.read(buf, CHUNK);
+                if (n > 0) {
+                    if (pngle_feed(s_logoCtx->pngle, buf, n) < 0) {
+                        Serial.printf("[LOGO] pngle error: %s\n", pngle_error(s_logoCtx->pngle));
+                        s_logoCtx->error = true;
+                        error = true;
+                    }
+                    yield();
                 }
-                yield();
             }
 
             if (!error && s_logoCtx->file && s_logoCtx->srcW > 0) {
@@ -313,13 +325,13 @@ void WiFiManager::update() {
             }
         }
 
-        pngle_destroy(s_logoCtx->pngle);
+        rawFile.close();
+        LittleFS.remove("/raw_logo.png");
+
+        if (s_logoCtx->pngle) pngle_destroy(s_logoCtx->pngle);
         delete s_logoCtx;
         s_logoCtx = nullptr;
 
-        free(pngBuffer);
-        pngBuffer = nullptr;
-        pngBufLen = pngBufCap = 0;
         logoUploadInProgress = false;
         Serial.printf("[LOGO] Decode %s\n", ok ? "OK" : "FAILED");
     }
@@ -496,45 +508,25 @@ void WiFiManager::startServer() {
         },
         [](AsyncWebServerRequest* request, const String& filename,
            size_t index, uint8_t* data, size_t len, bool final) {
-            // Buffer raw PNG bytes only — all pngle/LittleFS work happens in update()
-            // on the loopTask so the async_tcp watchdog is never starved.
+            // Stream raw PNG bytes directly to LittleFS to prevent RAM fragmentation
+            static File rawLogoFile;
             if (index == 0) {
                 s_logoUploadOk = false;
                 Serial.printf("[LOGO] Upload start, filename=%s\n", filename.c_str());
                 if (instance) {
-                    if (instance->pngBuffer) { free(instance->pngBuffer); instance->pngBuffer = nullptr; }
-                    instance->pngBufLen  = 0;
-                    instance->pngBufCap  = 0;
                     instance->pngPending = false;
                     instance->logoUploadInProgress = true;
                 }
+                rawLogoFile = LittleFS.open("/raw_logo.png", "w");
             }
-            if (instance && len > 0) {
-                size_t needed = instance->pngBufLen + len;
-                if (needed > instance->pngBufCap) {
-                    size_t newCap = needed + 4096;
-                    uint8_t* nb = (uint8_t*)realloc(instance->pngBuffer, newCap);
-                    if (nb) { instance->pngBuffer = nb; instance->pngBufCap = newCap; }
-                    else {
-                        Serial.println("[LOGO] realloc failed");
-                        free(instance->pngBuffer);
-                        instance->pngBuffer = nullptr;
-                        instance->pngBufLen = instance->pngBufCap = 0;
-                        instance->logoUploadInProgress = false;
-                        return;
-                    }
-                }
-                memcpy(instance->pngBuffer + instance->pngBufLen, data, len);
-                instance->pngBufLen += len;
+            if (rawLogoFile && len > 0) {
+                rawLogoFile.write(data, len);
             }
             if (final) {
-                Serial.printf("[LOGO] Upload buffered %u bytes — decode deferred\n",
-                    instance ? (unsigned)instance->pngBufLen : 0);
-                if (instance && instance->pngBuffer && instance->pngBufLen > 0) {
+                if (rawLogoFile) rawLogoFile.close();
+                Serial.println("[LOGO] Upload buffered to disk — decode deferred");
+                if (instance) {
                     instance->pngPending = true;
-                } else {
-                    if (instance) instance->logoUploadInProgress = false;
-                    Serial.println("[LOGO] Nothing buffered");
                 }
             }
         },
