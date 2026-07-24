@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <Preferences.h>
 #include "Config.h"
 #include "Hardware.h"
@@ -18,8 +18,8 @@
 #include "BleTelemetry.h"
 
 // ── Firmware version strings — update on each release ────────────────────────
-#define DIAL_FW_VERSION   "v2.5.4"   // M5Dial firmware version
-#define UI_VERSION        "v2.5.4"   // Web UI version (ui.js / index.html)
+#define DIAL_FW_VERSION   "v2.6.0-ble-dev"   // M5Dial firmware version
+#define UI_VERSION        "v2.6.0-ble-dev"   // Web UI version (ui.js / index.html)
 
 // Global objects
 CANDataManager canManager;
@@ -518,7 +518,7 @@ void setup() {
     Serial.println("Hardware initialized");
     #endif
 
-    SPIFFS.begin(true);  // Must be before uiManager.init so /logo.bin is visible at splash creation
+    LittleFS.begin(true);  // Must be before uiManager.init so /logo.bin is visible at splash creation
 
     uiManager.init(&canManager, &immobilizer);
     uiManager.setVersionInfo(DIAL_FW_VERSION, UI_VERSION);
@@ -572,7 +572,7 @@ void setup() {
     // ---------------------------------------------------------------------------
     bool paramsLoaded = false;
     bool fetchOnBoot = false;
-    
+
     // Read fetch-on-boot preference from NVS
     {
         Preferences prefs;
@@ -600,7 +600,7 @@ void setup() {
 
             if (fetchResult == FetchResult::SUCCESS) {
                 Serial.printf("[Fetch] Success: %d parameters\n", canManager.getParameterCount());
-                
+
                 // Clear the fetchOnBoot flag so next boot loads from SPIFFS (no infinite loop)
                 {
                     Preferences prefs;
@@ -609,7 +609,7 @@ void setup() {
                     prefs.end();
                     Serial.println("[Fetch] Cleared fetchOnBoot flag for next boot");
                 }
-                
+
                 // Reboot for clean heap state — ensures WiFi/GVRET work reliably
                 uiManager.showFetchStatus("VCU params loaded!\nRebooting...");
                 delay(2000);
@@ -625,23 +625,22 @@ void setup() {
         Serial.println("[Fetch] Auto-fetch disabled — loading from SPIFFS or defaults");
     }
 
-    // SPIFFS fallback (used when fetch disabled, failed, or skipped due to low heap)
-    if (!paramsLoaded && SPIFFS.exists("/params.json")) {
-        File paramFile = SPIFFS.open("/params.json", "r");
+    // LittleFS fallback (used when fetch disabled, failed, or skipped due to low heap)
+    if (!paramsLoaded && LittleFS.exists("/params.json")) {
+        File paramFile = LittleFS.open("/params.json", "r");
         if (paramFile) {
             size_t fileSize = paramFile.size();
             if (fileSize > 0 && fileSize < MAX_JSON_SIZE) {
-                String jsonContent = paramFile.readString();
-                paramFile.close();
-                if (canManager.loadParametersFromJSON(jsonContent.c_str())) {
-                    Serial.printf("[Params] Loaded %d from SPIFFS\n", canManager.getParameterCount());
+                if (canManager.loadParametersFromJSON(paramFile)) {
+                    Serial.printf("[Params] Loaded %d from LittleFS\n", canManager.getParameterCount());
                     paramsLoaded = true;
                     uiManager.showFetchStatus("Cached params\nloaded OK");
                     delay(1000);
                 }
+                paramFile.close();
             } else {
                 paramFile.close();
-                SPIFFS.remove("/params.json");
+                LittleFS.remove("/params.json");
             }
         }
     }

@@ -79,40 +79,48 @@ BO_ 1411 SDO_Response: 8 ZombieVerter
 ; IVT-S broadcasts at ~10ms (current) to ~1000ms (charge counter).
 ;==============================================================================
 
-BO_ 1041 IVTS_Current: 6 IVT_S
+BO_ 1041 IVTS_Command: 8 M5Dial
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ idc : 16|24@1- (0.001,0) [-32768|32767] "A" M5Dial
 
-BO_ 1313 IVTS_Voltage_U1: 6 IVT_S
+BO_ 1313 IVTS_Current: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ U1 : 16|24@1- (0.001,0) [0|1000] "V" Vector__XXX
+ SG_ idc : 16|32@1- (0.001,0) [-2147483.648|2147483.647] "A" M5Dial
 
-BO_ 1314 IVTS_Voltage_U2: 6 IVT_S
+BO_ 1314 IVTS_Voltage_U1: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ udc : 16|24@1- (0.001,0) [0|1000] "V" M5Dial
+ SG_ udc : 16|32@1- (0.001,0) [0|1000] "V" M5Dial
 
-BO_ 1315 IVTS_Voltage_U3: 6 IVT_S
+BO_ 1315 IVTS_Voltage_U2: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ U3 : 16|24@1- (0.001,0) [0|1000] "V" Vector__XXX
+ SG_ U2 : 16|32@1- (0.001,0) [0|1000] "V" Vector__XXX
 
-BO_ 1318 IVTS_Temperature: 6 IVT_S
+BO_ 1316 IVTS_Voltage_U3: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ tmpShunt : 16|24@1- (0.1,0) [-50|150] "degC" M5Dial
+ SG_ U3 : 16|32@1- (0.001,0) [0|1000] "V" Vector__XXX
 
-BO_ 1319 IVTS_Power: 6 IVT_S
+BO_ 1317 IVTS_Temperature: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ pwr : 16|24@1- (0.001,0) [-500|500] "kW" M5Dial
+ SG_ tmpShunt : 16|32@1- (0.1,0) [-50|150] "degC" M5Dial
 
-BO_ 1320 IVTS_ChargeCounter: 6 IVT_S
+BO_ 1318 IVTS_Power: 6 IVT_S
  SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
  SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
- SG_ As : 16|24@1- (1,0) [-8388608|8388607] "As" M5Dial
+ SG_ pwr : 16|32@1- (1,0) [-500000|500000] "W" M5Dial
+
+BO_ 1319 IVTS_As_Capacity: 6 IVT_S
+ SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ As : 16|32@1- (0.1,0) [-214748364.8|214748364.7] "As" M5Dial
+
+BO_ 1320 IVTS_Wh_Energy: 6 IVT_S
+ SG_ result_id : 0|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ reserved : 8|8@1+ (1,0) [0|255] "" Vector__XXX
+ SG_ Wh : 16|32@1- (1,0) [-2147483648|2147483647] "Wh" M5Dial
 
 ;==============================================================================
 ; SIMPBMS — VICTRON/REC PROTOCOL BROADCAST MESSAGES
@@ -153,7 +161,7 @@ BO_ 862 BMS_Name: 8 SimpBMS
 ;==============================================================================
 
 CM_ BU_ ZombieVerter "ZombieVerter VCU — Open source EV vehicle control unit. github.com/damienmaguire/Stm32-vcu. CANopen node ID 3, 500kbps.";
-CM_ BU_ IVT_S "Isabellenhuette IVT-S current/voltage shunt. 6-byte broadcast, 24-bit signed values little-endian in bytes 2-4.";
+CM_ BU_ IVT_S "Isabellenhuette IVT-S current/voltage shunt. 6 to 8-byte broadcast, 32-bit signed values little-endian in bytes 2-5.";
 CM_ BU_ SimpBMS "SimpBMS battery management system. Broadcasts on Victron/REC CAN protocol. IDs 0x355 and 0x356 conflict with ZombieVerter — ZV takes priority.";
 CM_ BU_ M5Dial "M5Stack Dial display ESP32-S3 CAN dashboard. github.com/robertwa1974/Zombieverter-Dial-Display.";
 
@@ -164,9 +172,9 @@ CM_ BO_ 853 "ZombieVerter state of charge. 0x355. Unsigned 16-bit in bytes 0-1, 
 CM_ BO_ 854 "ZombieVerter motor temperature. 0x356. Bytes 4-5, offset -40degC. CONFLICTS with SimpBMS 0x356.";
 CM_ BO_ 1539 "CANopen SDO read/write request from M5Dial to ZombieVerter. 0x603. cmd=0x40 read, cmd=0x23 write 4-byte, cmd=0x22 write 2-byte.";
 CM_ BO_ 1411 "CANopen SDO response from ZombieVerter to M5Dial. 0x583. cmd=0x43 read OK, cmd=0x60 write OK, cmd=0x80 abort (value in bytes 4-7 is abort code).";
-CM_ BO_ 1041 "IVT-S battery current. 0x411. 24-bit signed, mA units, factor 0.001 -> A. Negative = charging.";
-CM_ BO_ 1314 "IVT-S battery voltage U2 (main pack). 0x522. 24-bit signed, mV units, factor 0.001 -> V.";
-CM_ BO_ 1319 "IVT-S instantaneous power. 0x527. 24-bit signed, W units, factor 0.001 -> kW. Negative = regen/charging.";
+CM_ BO_ 1313 "IVT-S battery current. 0x521. 32-bit signed, mA units, factor 0.001 -> A. Negative = charging.";
+CM_ BO_ 1314 "IVT-S battery voltage U1 (main pack). 0x522. 32-bit signed, mV units, factor 0.001 -> V.";
+CM_ BO_ 1318 "IVT-S instantaneous power. 0x526. 32-bit signed, W units, factor 1 -> W. Negative = regen/charging.";
 CM_ BO_ 883 "SimpBMS cell summary. 0x373. Min/max cell voltage (factor 0.001 -> V) and min/max temp (factor 0.1, offset -273.1 -> degC).";
 CM_ BO_ 858 "SimpBMS alarm status flags. 0x35A. Each signal is 2-bit: 0=OK, 1=Warning, 2=Alarm, 3=NotAvailable.";
 
@@ -174,9 +182,9 @@ CM_ SG_ 294 tmphs "Heatsink temp in degC. Raw value with -40 offset: display_tem
 CM_ SG_ 599 speed "Motor RPM. Unsigned, 0-65535 range.";
 CM_ SG_ 853 SOC "State of charge 0-100%. Note: SimpBMS also broadcasts SOC on this ID. ZombieVerter takes priority in this installation.";
 CM_ SG_ 854 tmpm "Motor winding temperature degC. Raw - 40 offset. Note: SimpBMS broadcasts pack voltage on this ID — conflict. ZV takes priority.";
-CM_ SG_ 1041 idc "Pack current in Amps. Negative = charging or regen. Sign-extended 24-bit value from IVT-S.";
-CM_ SG_ 1314 udc "Main battery pack voltage in Volts. From IVT-S U2 channel. Primary voltage source for display.";
-CM_ SG_ 1319 pwr "Instantaneous pack power in kW. Calculated by IVT-S from U2 and I. Negative = regen or charging.";
+CM_ SG_ 1313 idc "Pack current in Amps. Negative = charging or regen. 32-bit signed value from IVT-S.";
+CM_ SG_ 1314 udc "Main battery pack voltage in Volts. From IVT-S U1 channel. Primary voltage source for display.";
+CM_ SG_ 1318 pwr "Instantaneous pack power in Watts. Calculated by IVT-S. Negative = regen or charging.";
 CM_ SG_ 883 BMS_Vmin "Weakest cell voltage in pack. Delta = Vmax - Vmin. Alert if delta > 100mV.";
 CM_ SG_ 883 BMS_Vmax "Strongest cell voltage in pack.";
 CM_ SG_ 883 Tmax "Hottest cell temperature from SimpBMS.";
@@ -207,12 +215,13 @@ BA_ "GenMsgCycleTime" BO_ 599 100;
 BA_ "GenMsgCycleTime" BO_ 528 100;
 BA_ "GenMsgCycleTime" BO_ 853 100;
 BA_ "GenMsgCycleTime" BO_ 854 100;
-BA_ "GenMsgCycleTime" BO_ 1041 10;
-BA_ "GenMsgCycleTime" BO_ 1313 100;
+BA_ "GenMsgCycleTime" BO_ 1313 10;
 BA_ "GenMsgCycleTime" BO_ 1314 100;
 BA_ "GenMsgCycleTime" BO_ 1315 100;
-BA_ "GenMsgCycleTime" BO_ 1318 500;
-BA_ "GenMsgCycleTime" BO_ 1319 100;
+BA_ "GenMsgCycleTime" BO_ 1316 100;
+BA_ "GenMsgCycleTime" BO_ 1317 500;
+BA_ "GenMsgCycleTime" BO_ 1318 100;
+BA_ "GenMsgCycleTime" BO_ 1319 1000;
 BA_ "GenMsgCycleTime" BO_ 1320 1000;
 BA_ "GenMsgCycleTime" BO_ 849 1000;
 BA_ "GenMsgCycleTime" BO_ 883 1000;

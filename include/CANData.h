@@ -49,6 +49,7 @@ public:
     FetchResult fetchParamsFromVCU();
 
     // Parameter management
+    bool loadParametersFromJSON(Stream& stream);
     bool loadParametersFromJSON(const char* jsonString);
     CANParameter* getParameter(uint16_t id);
     CANParameter* getParameterByName(const char* name);
@@ -123,6 +124,7 @@ private:
     FetchResult fetchParamsAttempt();
 
     void processReceivedMessage(CANMessage& msg);
+    bool loadParametersFromDoc(JsonDocument& doc);
     void handleSDOResponse(CANMessage& msg);
     void handlePDOMessage(CANMessage& msg);
     void handleGenericMessage(CANMessage& msg);

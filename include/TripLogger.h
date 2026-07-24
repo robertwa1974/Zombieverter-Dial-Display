@@ -56,14 +56,18 @@ public:
                 int tmpm_c,
                 int potnorm);  // throttle 0-1000
 
-    // Returns CSV string (header + all entries, chronological order)
-    String getCSV();
-
     // Erases all entries from NVS
     void clear();
 
     int  getEntryCount() const { return _count; }
+    int  getCount()      const { return _count; }
     bool isFull()        const { return _count >= TRIPLOG_MAX_ENTRIES; }
+
+    bool getEntry(int index, TripEntry& outEntry) const;
+    void getCSVHeader(char* outBuf, size_t outLen) const {
+        snprintf(outBuf, outLen, "row,time_s,speed_rpm,voltage_V,current_A,power_kW,SOC_pct,heatsink_C,motor_C,throttle_pct\n");
+    }
+    void entryToCSVRow(const TripEntry& e, int rowNum, char* outBuf, size_t outLen) const;
 
 private:
     TripLogger() : _count(0), _startIdx(0), _lastLogTime(0) {}
@@ -77,5 +81,4 @@ private:
 
     void   writeSlot(int slot, const TripEntry& e);
     bool   readSlot (int slot, TripEntry& e) const;
-    String entryToCSVRow(const TripEntry& e, int rowNum) const;
 };

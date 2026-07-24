@@ -48,40 +48,30 @@ void FaultLogger::push(const FaultEntry& e) {
     }
 }
 
-String FaultLogger::getJSON() {
-    String json = "[";
-    if (_count == 0) { json += "]"; return json; }
-
+bool FaultLogger::getEntry(int index, FaultEntry& outEntry) const {
     int total = min(_count, (int)FAULTLOG_MAX_ENTRIES);
-    bool first = true;
+    if (index < 0 || index >= total) return false;
 
-    // Newest first — iterate backwards through ring buffer
-    for (int i = total - 1; i >= 0; i--) {
-        int slot = (_startIdx + i) % FAULTLOG_MAX_ENTRIES;
-        if (_count < FAULTLOG_MAX_ENTRIES) slot = i;
-
-        FaultEntry e;
-        if (!readSlot(slot, e)) continue;
-
-        if (!first) json += ",";
-        first = false;
-
-        float t_s = e.timestamp_ms / 1000.0f;
-        json += "{";
-        json += "\"t\":" + String(t_s, 1) + ",";
-        json += "\"type\":\"" + String(e.isFault ? "fault" : "opmode") + "\",";
-        if (e.isFault) {
-            char codeBuf[12];
-            snprintf(codeBuf, sizeof(codeBuf), "0x%08X", e.abortCode);
-            json += "\"code\":\"" + String(codeBuf) + "\",";
-            json += "\"desc\":\"" + String(decodeAbortCode(e.abortCode)) + "\",";
-            json += "\"param\":" + String(e.paramId) + ",";
-        }
-        json += "\"opmode\":\"" + String(decodeOpmode(e.opmode)) + "\"";
-        json += "}";
+    int i = total - 1 - index;
+    int slot = i;
+    if (_count >= FAULTLOG_MAX_ENTRIES) {
+        slot = (_startIdx + i) % FAULTLOG_MAX_ENTRIES;
     }
-    json += "]";
-    return json;
+    return readSlot(slot, outEntry);
+}
+
+void FaultLogger::entryToJSON(const FaultEntry& e, int index, char* outBuf, size_t outLen) const {
+    if (!outBuf || outLen == 0) return;
+    float t_s = e.timestamp_ms / 1000.0f;
+    if (e.isFault) {
+        snprintf(outBuf, outLen,
+                 "{\"t\":%.1f,\"type\":\"fault\",\"code\":\"0x%08X\",\"desc\":\"%s\",\"param\":%u,\"opmode\":\"%s\"}",
+                 t_s, e.abortCode, decodeAbortCode(e.abortCode), e.paramId, decodeOpmode(e.opmode));
+    } else {
+        snprintf(outBuf, outLen,
+                 "{\"t\":%.1f,\"type\":\"opmode\",\"opmode\":\"%s\"}",
+                 t_s, decodeOpmode(e.opmode));
+    }
 }
 
 void FaultLogger::clear() {
