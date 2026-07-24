@@ -39,8 +39,8 @@ public:
     // Log an opmode transition
     void logOpmodeChange(uint8_t newOpmode);
 
-    // Returns JSON array string of all entries, newest first
-    String getJSON();
+    bool getEntry(int index, FaultEntry& outEntry) const;
+    void entryToJSON(const FaultEntry& e, int index, char* outBuf, size_t outLen) const;
 
     void clear();
     int getCount() const { return _count; }

@@ -62,30 +62,15 @@ void TripLogger::update(int speed_rpm, int udc_dv, int idc_da,
 }
 
 // ---------------------------------------------------------------------------
-// getCSV() — returns all entries in chronological order (oldest first)
+// getEntry() — retrieves a single entry in chronological order
 // ---------------------------------------------------------------------------
-String TripLogger::getCSV() {
-    String csv = "row,time_s,speed_rpm,voltage_V,current_A,power_kW,SOC_pct,heatsink_C,motor_C,throttle_pct\n";
-
-    if (_count == 0) return csv;
-
-    TripEntry e;
-    int rows = 0;
-
-    if (_count < TRIPLOG_MAX_ENTRIES) {
-        // Buffer not yet full — entries are in slots 0.._count-1, already ordered
-        for (int i = 0; i < _count; i++) {
-            if (readSlot(i, e)) csv += entryToCSVRow(e, ++rows);
-        }
-    } else {
-        // Buffer full — start at _startIdx (oldest), wrap around
-        for (int i = 0; i < TRIPLOG_MAX_ENTRIES; i++) {
-            int slot = (_startIdx + i) % TRIPLOG_MAX_ENTRIES;
-            if (readSlot(slot, e)) csv += entryToCSVRow(e, ++rows);
-        }
+bool TripLogger::getEntry(int index, TripEntry& outEntry) const {
+    if (index < 0 || index >= _count) return false;
+    int slot = index;
+    if (_count >= TRIPLOG_MAX_ENTRIES) {
+        slot = (_startIdx + index) % TRIPLOG_MAX_ENTRIES;
     }
-
-    return csv;
+    return readSlot(slot, outEntry);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,9 +110,9 @@ bool TripLogger::readSlot(int slot, TripEntry& e) const {
     return len == sizeof(TripEntry);
 }
 
-String TripLogger::entryToCSVRow(const TripEntry& e, int rowNum) const {
-    char buf[140];
-    snprintf(buf, sizeof(buf),
+void TripLogger::entryToCSVRow(const TripEntry& e, int rowNum, char* outBuf, size_t outLen) const {
+    if (!outBuf || outLen == 0) return;
+    snprintf(outBuf, outLen,
         "%d,%.1f,%d,%.1f,%.1f,%.2f,%d,%d,%d,%.1f\n",
         rowNum,
         e.timestamp_ms / 1000.0f,
@@ -140,5 +125,4 @@ String TripLogger::entryToCSVRow(const TripEntry& e, int rowNum) const {
         (int)e.tmpm,
         e.potnorm / 10.0f
     );
-    return String(buf);
 }

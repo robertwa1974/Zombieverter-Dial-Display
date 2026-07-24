@@ -23,7 +23,7 @@
 //   GET  /can/log/download      → download canlog.csv
 //   GET  /can/stats             → per-ID frame statistics JSON
 //
-// Web assets (index.html, can.html, inverter.js etc.) served from SPIFFS.
+// Web assets (index.html, can.html, inverter.js etc.) served from LittleFS.
 // =============================================================================
 
 #include <Arduino.h>
@@ -61,10 +61,7 @@ public:
     void clearLogoReloadRequest() { logoReloadRequested = false; }
     bool isLogoUploadInProgress() const { return logoUploadInProgress; }
 
-    // PNG buffer — public so static lambdas in startServer() can access via instance->
-    uint8_t* pngBuffer  = nullptr;
-    size_t   pngBufLen  = 0;
-    size_t   pngBufCap  = 0;
+    // Logo upload background flag
     bool     pngPending = false;
 
     void handleCmd(AsyncWebServerRequest* request);

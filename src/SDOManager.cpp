@@ -146,7 +146,9 @@ void SDOManager::taskLoop() {
                 stateEnteredMs = millis();
                 state = SDO_WAIT_RESPONSE;
             } else {
+                #if DEBUG_SDO
                 Serial.printf("[SDO] TX failed param %d\n", currentRequest.paramId);
+                #endif
                 state = SDO_RETRY;
             }
             break;
@@ -160,8 +162,10 @@ void SDOManager::taskLoop() {
                 break;
             }
             if ((millis() - stateEnteredMs) >= SDO_TIMEOUT_MS) {
+                #if DEBUG_SDO
                 Serial.printf("[SDO] Timeout param %d (attempt %d)\n",
                               currentRequest.paramId, retryCount + 1);
+                #endif
                 if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                     timeoutCount++;
                     xSemaphoreGive(statsMutex);
@@ -179,9 +183,11 @@ void SDOManager::taskLoop() {
         case SDO_RETRY: {
             retryCount++;
             if (retryCount <= SDO_MAX_RETRIES) {
+                #if DEBUG_SDO
                 Serial.printf("[SDO] Retry %d/%d param %d\n",
                               retryCount, SDO_MAX_RETRIES,
                               currentRequest.paramId);
+                #endif
                 vTaskDelay(pdMS_TO_TICKS(20));
                 state = SDO_SEND_REQUEST;
             } else {
@@ -191,8 +197,10 @@ void SDOManager::taskLoop() {
         }
 
         case SDO_FAIL: {
+            #if DEBUG_SDO
             Serial.printf("[SDO] FAILED param %d after %d retries\n",
                           currentRequest.paramId, SDO_MAX_RETRIES);
+            #endif
             deliverResult(false, currentRequest.paramId, 0,
                           currentRequest.type != SDO_REQ_READ,
                           SDO_ABORT_TIMEOUT);
@@ -250,7 +258,9 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
         }
 
         case SDO_RESP_WRITE: {
+            #if DEBUG_SDO
             Serial.printf("[SDO] RX Write OK param %d\n", paramId);
+            #endif
             deliverResult(true, paramId, currentRequest.value, true);
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
                 successCount++;
@@ -267,8 +277,10 @@ void SDOManager::handleFrame(const twai_message_t& msg) {
                 (msg.data[6] << 16) |
                 (msg.data[7] << 24)
             );
+            #if DEBUG_SDO
             Serial.printf("[SDO] RX Abort param %d code 0x%08X (%s)\n",
                           paramId, abortCode, abortDescription(abortCode));
+            #endif
             deliverResult(false, paramId, 0,
                           currentRequest.type != SDO_REQ_READ, abortCode);
             if (xSemaphoreTake(statsMutex, portMAX_DELAY)) {
@@ -316,7 +328,9 @@ bool SDOManager::sendFrame(uint8_t cmd, uint16_t paramId, int32_t value) {
 
     esp_err_t rc = twai_transmit(&tx, pdMS_TO_TICKS(10));
     if (rc != ESP_OK) {
+        #if DEBUG_SDO
         Serial.printf("[SDO] twai_transmit failed: %s\n", esp_err_to_name(rc));
+        #endif
         return false;
     }
 
@@ -354,4 +368,4 @@ const char* SDOManager::abortDescription(uint32_t code) {
         case SDO_ABORT_GENERAL:       return "General error";
         default:                      return "Unknown";
     }
-}
+}

@@ -26,7 +26,7 @@
 #include <ESPmDNS.h>
 #include <ESPAsyncWebServer.h>
 #include <Update.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <FS.h>
 #include <ArduinoJson.h>
 #include "driver/twai.h"
@@ -143,9 +143,9 @@ static void logo_on_init(pngle_t* pngle, uint32_t w, uint32_t h) {
         w, h, s_logoCtx->dstW, s_logoCtx->dstH,
         s_logoCtx->dstX0, s_logoCtx->dstY0);
 
-    s_logoCtx->file = SPIFFS.open("/logo.tmp", "w");
+    s_logoCtx->file = LittleFS.open("/logo.tmp", "w");
     if (!s_logoCtx->file) {
-        Serial.println("[LOGO] SPIFFS open failed");
+        Serial.println("[LOGO] LittleFS open failed");
         s_logoCtx->error = true;
         return;
     }
@@ -206,13 +206,13 @@ WiFiManager::WiFiManager()
 }
 
 // ---------------------------------------------------------------------------
-// init — mounts SPIFFS, configures AP, registers routes
+// init — mounts LittleFS, configures AP, registers routes
 // ---------------------------------------------------------------------------
 bool WiFiManager::init(CANDataManager* canManager) {
     can = canManager;
 
-    if (!SPIFFS.begin(true)) {
-        Serial.println("[WiFi] SPIFFS mount failed");
+    if (!LittleFS.begin(true)) {
+        Serial.println("[WiFi] LittleFS mount failed");
     }
 
     WiFi.mode(WIFI_OFF);
@@ -273,9 +273,17 @@ void WiFiManager::update() {
     }
 
     // Deferred PNG decode — runs on loopTask so async_tcp watchdog is never starved
-    if (pngPending && pngBuffer && pngBufLen > 0) {
+    if (pngPending) {
         pngPending = false;
-        Serial.printf("[LOGO] Decoding %u bytes on loopTask...\n", (unsigned)pngBufLen);
+        File rawFile = LittleFS.open("/raw_logo.png", "r");
+        if (!rawFile) {
+            Serial.println("[LOGO] Decode failed — /raw_logo.png missing");
+            logoUploadInProgress = false;
+            return;
+        }
+
+        size_t pngSize = rawFile.size();
+        Serial.printf("[LOGO] Decoding %u bytes on loopTask...\n", (unsigned)pngSize);
 
         s_logoCtx = new LogoUploadCtx();
         s_logoCtx->pngle = pngle_new();
@@ -285,41 +293,45 @@ void WiFiManager::update() {
             pngle_set_init_callback(s_logoCtx->pngle, logo_on_init);
             pngle_set_draw_callback(s_logoCtx->pngle, logo_on_draw);
 
-            const size_t CHUNK = 2048;
+            const size_t CHUNK = 512;
+            uint8_t buf[CHUNK];
             bool error = false;
-            for (size_t off = 0; off < pngBufLen && !error; off += CHUNK) {
-                size_t n = min(CHUNK, pngBufLen - off);
-                if (pngle_feed(s_logoCtx->pngle, pngBuffer + off, n) < 0) {
-                    Serial.printf("[LOGO] pngle error: %s\n", pngle_error(s_logoCtx->pngle));
-                    s_logoCtx->error = true;
-                    error = true;
+
+            while (rawFile.available() && !error) {
+                size_t n = rawFile.read(buf, CHUNK);
+                if (n > 0) {
+                    if (pngle_feed(s_logoCtx->pngle, buf, n) < 0) {
+                        Serial.printf("[LOGO] pngle error: %s\n", pngle_error(s_logoCtx->pngle));
+                        s_logoCtx->error = true;
+                        error = true;
+                    }
+                    yield();
                 }
-                yield();
             }
 
             if (!error && s_logoCtx->file && s_logoCtx->srcW > 0) {
                 if (s_logoCtx->lastY != 0xFFFF) logo_flush_row(s_logoCtx->lastY);
                 s_logoCtx->file.close();
-                SPIFFS.remove("/logo.bin");
-                SPIFFS.rename("/logo.tmp", "/logo.bin");
+                LittleFS.remove("/logo.bin");
+                LittleFS.rename("/logo.tmp", "/logo.bin");
                 ok = true;
                 s_logoUploadOk = true;
                 logoReloadRequested = true;
                 Serial.printf("[LOGO] /logo.bin written OK (%u pixels)\n", s_logoCtx->pixCount);
             } else {
                 if (s_logoCtx->file) s_logoCtx->file.close();
-                SPIFFS.remove("/logo.tmp");
+                LittleFS.remove("/logo.tmp");
                 Serial.println("[LOGO] Decode failed — logo.bin preserved");
             }
         }
 
-        pngle_destroy(s_logoCtx->pngle);
+        rawFile.close();
+        LittleFS.remove("/raw_logo.png");
+
+        if (s_logoCtx->pngle) pngle_destroy(s_logoCtx->pngle);
         delete s_logoCtx;
         s_logoCtx = nullptr;
 
-        free(pngBuffer);
-        pngBuffer = nullptr;
-        pngBufLen = pngBufCap = 0;
         logoUploadInProgress = false;
         Serial.printf("[LOGO] Decode %s\n", ok ? "OK" : "FAILED");
     }
@@ -364,7 +376,7 @@ void WiFiManager::startServer() {
     });
 
     // -----------------------------------------------------------------------
-    // /list — SPIFFS file listing
+    // /list — LittleFS file listing
     // -----------------------------------------------------------------------
     server->on("/list", HTTP_GET, [](AsyncWebServerRequest* request) {
         if (!instance) { request->send(500); return; }
@@ -372,7 +384,7 @@ void WiFiManager::startServer() {
     });
 
     // -----------------------------------------------------------------------
-    // /edit DELETE — delete file from SPIFFS
+    // /edit DELETE — delete file from LittleFS
     // -----------------------------------------------------------------------
     server->on("/edit", HTTP_DELETE, [](AsyncWebServerRequest* request) {
         if (!instance) { request->send(500); return; }
@@ -380,7 +392,7 @@ void WiFiManager::startServer() {
     });
 
     // -----------------------------------------------------------------------
-    // /edit POST — upload file to SPIFFS
+    // /edit POST — upload file to LittleFS
     // -----------------------------------------------------------------------
     server->on("/edit", HTTP_POST,
         [](AsyncWebServerRequest* request) {
@@ -394,7 +406,7 @@ void WiFiManager::startServer() {
     );
 
     // -----------------------------------------------------------------------
-    // /spot — live parameter values from RAM, no SPIFFS
+    // /spot — live parameter values from RAM, no LittleFS
     // Returns {"name":value,...} for all parameters with live CAN data
     // -----------------------------------------------------------------------
     server->on("/spot", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -483,7 +495,7 @@ void WiFiManager::startServer() {
     );
 
     // -----------------------------------------------------------------------
-    // /upload-logo  POST — accepts PNG, decodes, saves /logo.bin to SPIFFS
+    // /upload-logo  POST — accepts PNG, decodes, saves /logo.bin to LittleFS
     // /delete-logo  DELETE — removes /logo.bin
     // -----------------------------------------------------------------------
     server->on("/upload-logo", HTTP_POST,
@@ -496,45 +508,25 @@ void WiFiManager::startServer() {
         },
         [](AsyncWebServerRequest* request, const String& filename,
            size_t index, uint8_t* data, size_t len, bool final) {
-            // Buffer raw PNG bytes only — all pngle/SPIFFS work happens in update()
-            // on the loopTask so the async_tcp watchdog is never starved.
+            // Stream raw PNG bytes directly to LittleFS to prevent RAM fragmentation
+            static File rawLogoFile;
             if (index == 0) {
                 s_logoUploadOk = false;
                 Serial.printf("[LOGO] Upload start, filename=%s\n", filename.c_str());
                 if (instance) {
-                    if (instance->pngBuffer) { free(instance->pngBuffer); instance->pngBuffer = nullptr; }
-                    instance->pngBufLen  = 0;
-                    instance->pngBufCap  = 0;
                     instance->pngPending = false;
                     instance->logoUploadInProgress = true;
                 }
+                rawLogoFile = LittleFS.open("/raw_logo.png", "w");
             }
-            if (instance && len > 0) {
-                size_t needed = instance->pngBufLen + len;
-                if (needed > instance->pngBufCap) {
-                    size_t newCap = needed + 4096;
-                    uint8_t* nb = (uint8_t*)realloc(instance->pngBuffer, newCap);
-                    if (nb) { instance->pngBuffer = nb; instance->pngBufCap = newCap; }
-                    else {
-                        Serial.println("[LOGO] realloc failed");
-                        free(instance->pngBuffer);
-                        instance->pngBuffer = nullptr;
-                        instance->pngBufLen = instance->pngBufCap = 0;
-                        instance->logoUploadInProgress = false;
-                        return;
-                    }
-                }
-                memcpy(instance->pngBuffer + instance->pngBufLen, data, len);
-                instance->pngBufLen += len;
+            if (rawLogoFile && len > 0) {
+                rawLogoFile.write(data, len);
             }
             if (final) {
-                Serial.printf("[LOGO] Upload buffered %u bytes — decode deferred\n",
-                    instance ? (unsigned)instance->pngBufLen : 0);
-                if (instance && instance->pngBuffer && instance->pngBufLen > 0) {
+                if (rawLogoFile) rawLogoFile.close();
+                Serial.println("[LOGO] Upload buffered to disk — decode deferred");
+                if (instance) {
                     instance->pngPending = true;
-                } else {
-                    if (instance) instance->logoUploadInProgress = false;
-                    Serial.println("[LOGO] Nothing buffered");
                 }
             }
         },
@@ -565,7 +557,7 @@ void WiFiManager::startServer() {
     });
 
     // -----------------------------------------------------------------------
-    // Catch-all — serve static files from SPIFFS (with .gz support)
+    // Catch-all — serve static files from LittleFS (with .gz support)
     // -----------------------------------------------------------------------
     server->onNotFound([](AsyncWebServerRequest* request) {
         if (!instance) { request->send(404); return; }
@@ -750,7 +742,7 @@ void WiFiManager::handleCmd(AsyncWebServerRequest* request) {
 }
 
 // ---------------------------------------------------------------------------
-// cmdJson — not used, params.json served directly from SPIFFS
+// cmdJson — not used, params.json served directly from LittleFS
 // ---------------------------------------------------------------------------
 String WiFiManager::cmdJson() {
     return "{}";
@@ -825,8 +817,8 @@ String WiFiManager::cmdSet(const String& name, const String& value) {
 // /wifi GET
 // ---------------------------------------------------------------------------
 void WiFiManager::handleWifiGet(AsyncWebServerRequest* request) {
-    if (SPIFFS.exists("/wifi.html")) {
-        File f = SPIFFS.open("/wifi.html", "r");
+    if (LittleFS.exists("/wifi.html")) {
+        File f = LittleFS.open("/wifi.html", "r");
         String html = f.readString();
         f.close();
         html.replace("%apSSID%",  WiFi.softAPSSID());
@@ -863,7 +855,7 @@ void WiFiManager::handleWifiPost(AsyncWebServerRequest* request) {
 // /list
 // ---------------------------------------------------------------------------
 void WiFiManager::handleFileList(AsyncWebServerRequest* request) {
-    File root = SPIFFS.open("/");
+    File root = LittleFS.open("/");
     String output = "[";
     File file = root.openNextFile();
     while (file) {
@@ -889,7 +881,7 @@ void WiFiManager::handleFileUpload(AsyncWebServerRequest* request,
 
     if (index == 0) {
         Serial.printf("[WiFi] Upload start: %s\n", path.c_str());
-        fsUploadFile = SPIFFS.open(path, "w");
+        fsUploadFile = LittleFS.open(path, "w");
     }
     if (fsUploadFile) {
         fsUploadFile.write(data, len);
@@ -911,11 +903,11 @@ void WiFiManager::handleFileDelete(AsyncWebServerRequest* request) {
         return;
     }
     String path = request->getParam("f")->value();
-    if (!SPIFFS.exists(path)) {
+    if (!LittleFS.exists(path)) {
         request->send(404, "text/plain", "File not found");
         return;
     }
-    SPIFFS.remove(path);
+    LittleFS.remove(path);
     Serial.printf("[WiFi] Deleted: %s\n", path.c_str());
     request->send(200, "text/plain", "");
 }
@@ -974,7 +966,7 @@ String WiFiManager::getContentType(const String& filename) {
     return "text/plain";
 }
 
-// Serve file from SPIFFS — tries .gz version first
+// Serve file from LittleFS — tries .gz version first
 // Called from onNotFound catch-all
 bool WiFiManager::serveFile(AsyncWebServerRequest* request, const String& overridePath) {
     String path = overridePath.length() > 0 ? overridePath : request->url();
@@ -982,18 +974,18 @@ bool WiFiManager::serveFile(AsyncWebServerRequest* request, const String& overri
 
     // Try .gz first
     String gzPath = path + ".gz";
-    if (SPIFFS.exists(gzPath)) {
+    if (LittleFS.exists(gzPath)) {
         AsyncWebServerResponse* response =
-            request->beginResponse(SPIFFS, gzPath, getContentType(path));
+            request->beginResponse(LittleFS, gzPath, getContentType(path));
         response->addHeader("Content-Encoding", "gzip");
         response->addHeader("Cache-Control", "max-age=86400");
         request->send(response);
         return true;
     }
 
-    if (SPIFFS.exists(path)) {
+    if (LittleFS.exists(path)) {
         AsyncWebServerResponse* response =
-            request->beginResponse(SPIFFS, path, getContentType(path));
+            request->beginResponse(LittleFS, path, getContentType(path));
         response->addHeader("Cache-Control", "max-age=86400");
         request->send(response);
         return true;
@@ -1060,11 +1052,23 @@ void WiFiManager::handleValue(AsyncWebServerRequest* request) {
 // Returns the full trip log as a CSV download (chronological, ring buffer order)
 // ---------------------------------------------------------------------------
 void WiFiManager::handleTripLog(AsyncWebServerRequest* request) {
-    String csv = TripLogger::getInstance().getCSV();
-    AsyncWebServerResponse* resp = request->beginResponse(200, "text/csv", csv);
+    AsyncWebServerResponse* resp = request->beginChunkedResponse("text/csv", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+        static int rowNum = 0;
+        if (index == 0) {
+            rowNum = 0;
+            TripLogger::getInstance().getCSVHeader((char*)buffer, maxLen);
+            return strlen((char*)buffer);
+        }
+        TripEntry e;
+        if (TripLogger::getInstance().getEntry(rowNum - 1, e)) {
+            TripLogger::getInstance().entryToCSVRow(e, rowNum, (char*)buffer, maxLen);
+            rowNum++;
+            return strlen((char*)buffer);
+        }
+        return 0; // finished
+    });
     resp->addHeader("Content-Disposition", "attachment; filename=\"trip_log.csv\"");
     resp->addHeader("Access-Control-Allow-Origin", "*");
-    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1084,11 +1088,37 @@ void WiFiManager::handleTripLogDelete(AsyncWebServerRequest* request) {
 // Returns NVS fault/opmode log as JSON array, newest first
 // ---------------------------------------------------------------------------
 void WiFiManager::handleFaultLog(AsyncWebServerRequest* request) {
-    String json = FaultLogger::getInstance().getJSON();
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
+    AsyncWebServerResponse* resp = request->beginChunkedResponse("application/json", [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+        static int cursor = 0;
+        if (index == 0) {
+            cursor = 0;
+            snprintf((char*)buffer, maxLen, "[");
+            return 1;
+        }
+        int count = FaultLogger::getInstance().getCount();
+        if (cursor < count) {
+            char itemBuf[256];
+            FaultEntry e;
+            if (FaultLogger::getInstance().getEntry(cursor, e)) {
+                FaultLogger::getInstance().entryToJSON(e, cursor, itemBuf, sizeof(itemBuf));
+                cursor++;
+                if (cursor < count) {
+                    snprintf((char*)buffer, maxLen, "%s,", itemBuf);
+                } else {
+                    snprintf((char*)buffer, maxLen, "%s", itemBuf);
+                }
+                return strlen((char*)buffer);
+            }
+        }
+        if (cursor == count) {
+            cursor++;
+            snprintf((char*)buffer, maxLen, "]");
+            return 1;
+        }
+        return 0; // finished
+    });
     resp->addHeader("Access-Control-Allow-Origin", "*");
     resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "close");
     request->send(resp);
 }
 
@@ -1119,16 +1149,11 @@ void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
     bool     fetchOnBoot  = prefs.getBool("fetchOnBoot",  false);
     prefs.end();
 
-    String json = "{\"finalDrive\":"   + String(finalDrive, 2) +
-                  ",\"wheelCirc\":"    + String(wheelCirc,  2) +
-                  ",\"screenMask\":"   + String(screenMask)    +
-                  ",\"immobEnabled\":" + String(immobEnabled ? "true" : "false") +
-                  ",\"immobWriteId\":" + String(immobWriteId) +
-                  ",\"immobReadId\":"  + String(immobReadId)  +
-                  ",\"fetchOnBoot\":"  + String(fetchOnBoot ? "true" : "false") + "}";
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    request->send(resp);
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->printf("{\"finalDrive\":%.2f,\"wheelCirc\":%.2f,\"screenMask\":%u,\"immobEnabled\":%s,\"immobWriteId\":%u,\"immobReadId\":%u,\"fetchOnBoot\":%s}",
+                     finalDrive, wheelCirc, screenMask, immobEnabled ? "true" : "false", immobWriteId, immobReadId, fetchOnBoot ? "true" : "false");
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -1241,31 +1266,27 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
 
 // ---------------------------------------------------------------------------
 // handleSpot — build live values JSON purely from in-memory parameter cache
-// No SPIFFS, no deserialization — just loop over parameters[] array
+// No LittleFS, no deserialization — just loop over parameters[] array
 // ---------------------------------------------------------------------------
 void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
-    String json = "{";
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->print("{");
     bool first = true;
-    uint16_t count = can->getParameterCount();
+    uint16_t count = can ? can->getParameterCount() : 0;
 
     for (uint16_t i = 0; i < count; i++) {
         CANParameter* p = can->getParameterByIndex(i);
         if (!p || p->lastUpdateTime == 0) continue;
 
-        if (!first) json += ",";
-        json += "\"";
-        json += p->name;
-        json += "\":";
-        json += p->valueInt;
+        if (!first) response->print(",");
+        response->printf("\"%s\":%d", p->name, p->valueInt);
         first = false;
     }
-    json += "}";
+    response->print("}");
 
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    resp->addHeader("Cache-Control", "no-cache");
-    resp->addHeader("Connection", "close");
-    request->send(resp);
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    response->addHeader("Cache-Control", "no-cache");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,22 +1295,16 @@ void WiFiManager::handleSpot(AsyncWebServerRequest* request) {
 // ---------------------------------------------------------------------------
 void WiFiManager::handleHealthSettingsGet(AsyncWebServerRequest* request) {
     HealthChecker& hc = HealthChecker::getInstance();
-    String json = "{";
-    json += "\"failBehav\":"   + String((int)hc.getFailBehaviour())  + ",";
-    json += "\"cdWarn\":"      + String(hc.getCellDeltaWarn(),  1)   + ",";
-    json += "\"cdFail\":"      + String(hc.getCellDeltaFail(),  1)   + ",";
-    json += "\"mcWarn\":"      + String(hc.getMinCellWarn(),    3)   + ",";
-    json += "\"mcFail\":"      + String(hc.getMinCellFail(),    3)   + ",";
-    json += "\"mtWarn\":"      + String(hc.getMotorTempWarn(),  1)   + ",";
-    json += "\"mtFail\":"      + String(hc.getMotorTempFail(),  1)   + ",";
-    json += "\"itWarn\":"      + String(hc.getInvTempWarn(),    1)   + ",";
-    json += "\"itFail\":"      + String(hc.getInvTempFail(),    1)   + ",";
-    json += "\"pvWarn\":"      + String(hc.getPackVoltWarn(),   1)   + ",";
-    json += "\"pvFail\":"      + String(hc.getPackVoltFail(),   1);
-    json += "}";
-    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", json);
-    resp->addHeader("Access-Control-Allow-Origin", "*");
-    request->send(resp);
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    response->printf("{\"failBehav\":%d,\"cdWarn\":%.1f,\"cdFail\":%.1f,\"mcWarn\":%.3f,\"mcFail\":%.3f,\"mtWarn\":%.1f,\"mtFail\":%.1f,\"itWarn\":%.1f,\"itFail\":%.1f,\"pvWarn\":%.1f,\"pvFail\":%.1f}",
+                     (int)hc.getFailBehaviour(),
+                     hc.getCellDeltaWarn(), hc.getCellDeltaFail(),
+                     hc.getMinCellWarn(), hc.getMinCellFail(),
+                     hc.getMotorTempWarn(), hc.getMotorTempFail(),
+                     hc.getInvTempWarn(), hc.getInvTempFail(),
+                     hc.getPackVoltWarn(), hc.getPackVoltFail());
+    response->addHeader("Access-Control-Allow-Origin", "*");
+    request->send(response);
 }
 
 // ---------------------------------------------------------------------------
@@ -1360,8 +1375,8 @@ void WiFiManager::handleLogoUpload(AsyncWebServerRequest* request,
 // handleLogoDelete — DELETE /delete-logo
 // ---------------------------------------------------------------------------
 void WiFiManager::handleLogoDelete(AsyncWebServerRequest* request) {
-    if (SPIFFS.exists("/logo.bin")) {
-        SPIFFS.remove("/logo.bin");
+    if (LittleFS.exists("/logo.bin")) {
+        LittleFS.remove("/logo.bin");
         logoReloadRequested = true;   // clears live widget via main.cpp → reloadLogo()
         Serial.println("[LOGO] /logo.bin deleted");
         AsyncWebServerResponse* resp = request->beginResponse(200, "application/json",

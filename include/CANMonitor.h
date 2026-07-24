@@ -13,7 +13,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "driver/twai.h"
@@ -102,7 +102,7 @@ private:
     uint8_t wsQHead = 0;
     uint8_t wsQTail = 0;
     SemaphoreHandle_t wsQMutex = nullptr;
-    void enqueueWsMsg(const String& json);
+    void enqueueWsMsg(const char* json);
     void flushWsQueue();  // call from main loop only
 
     // Throttle: only push a given ID at most once per 50ms
@@ -119,15 +119,15 @@ private:
     uint32_t sessionFrameCount = 0;
     uint32_t sessionStartMs = 0;
 
-    void writeCSVRow(const CANFrame& f, const String& decoded);
+    void writeCSVRow(const CANFrame& f, const char* decoded);
 
     // ---- Decoder ----
     CANDataManager* canMgr = nullptr;
-    String decodeFrame(const CANFrame& f);
+    void decodeFrame(const CANFrame& f, char* outBuf, size_t outLen);
 
     // ---- Frame → JSON string ----
-    String frameToJson(const CANFrame& f, const String& decoded,
-                       uint32_t countForID);
+    void frameToJson(const CANFrame& f, const char* decoded,
+                     uint32_t countForID, char* outJson, size_t outLen);
 
     // ---- WebSocket event handler (static trampoline) ----
     static void onWsEvent(AsyncWebSocket* server, AsyncWebSocketClient* client,
