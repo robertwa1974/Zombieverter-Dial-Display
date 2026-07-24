@@ -761,7 +761,6 @@ void Immobilizer::onBleAuthReceived(const uint8_t* token, size_t len) {
     // Normal operation — unlock only, never lock (see BLE_ENABLED header
     // comment: locking must always be a deliberate PIN/RFID action).
     if (mode != ImmobMode::LOCKED) return;
-    if (!bleEnabled) return;
     if (bleUnlockCooldown != 0 && millis() < bleUnlockCooldown) return;
     if (millis() < bleLockGraceUntil) {
         Serial.println("[BLE] Auto-unlock suppressed — just locked, grace period active");
