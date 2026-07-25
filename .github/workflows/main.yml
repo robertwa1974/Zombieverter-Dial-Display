@@ -51,9 +51,9 @@ jobs:
         run: pio run -e m5stack-dial
 
       # -----------------------------------------------------------------------
-      # 5. Build SPIFFS filesystem image
+      # 5. Build LittleFS filesystem image
       # -----------------------------------------------------------------------
-      - name: Build SPIFFS image
+      - name: Build LittleFS image
         run: pio run -e m5stack-dial --target buildfs
 
       # -----------------------------------------------------------------------
@@ -88,7 +88,7 @@ jobs:
       #   partitions  0x8000
       #   boot_app0   0xe000
       #   firmware    0x10000
-      #   spiffs      0x3F0000
+      #   littlefs    0x3F0000
       # -----------------------------------------------------------------------
       - name: Merge binaries into factory.bin
         run: |
@@ -100,7 +100,7 @@ jobs:
             0x8000    ${{ env.BUILD_DIR }}/partitions.bin \
             0xe000    ${{ env.BOOT_APP0 }} \
             0x10000   ${{ env.BUILD_DIR }}/firmware.bin \
-            0x3F0000  ${{ env.BUILD_DIR }}/spiffs.bin
+            0x3F0000  ${{ env.BUILD_DIR }}/littlefs.bin
 
           echo "factory.bin size: $(wc -c < factory.bin) bytes"
 
