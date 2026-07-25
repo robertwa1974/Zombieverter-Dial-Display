@@ -1,9 +1,16 @@
 #pragma once
 // ============================================================================
 // TripLogger.h
-// Logs key telemetry to NVS (ESP32 Non-Volatile Storage) at 5-second intervals
-// while the vehicle is moving (speed > 0). Survives power cycles.
+// Logs key telemetry at 5-second intervals while the vehicle is moving
+// (speed > 0). Entries live in a RAM ring buffer and are periodically
+// flushed to NVS (ESP32 Non-Volatile Storage) so a power cycle doesn't lose
+// more than the last sync interval's worth of data.
 // Accessible via GET /log (CSV download) and DELETE /log (clear).
+//
+// Why RAM-buffered: writing every 5s directly to NVS flash wears out the
+// ESP32's internal flash sectors (rated ~100,000 write/erase cycles) in a
+// matter of months under regular driving. Buffering in RAM and syncing only
+// every 10 minutes (plus on VCU disconnect) cuts flash writes by ~99%.
 //
 // Storage: NVS namespace "triplog"
 //   Keys:  "count"  — number of valid entries (0..MAX)
@@ -24,6 +31,7 @@
 #define TRIPLOG_MAX_ENTRIES     200
 #define TRIPLOG_LOG_INTERVAL_MS 5000   // log every 5 seconds
 #define TRIPLOG_MIN_SPEED       10     // only log when speed > 10 RPM
+#define TRIPLOG_SYNC_INTERVAL_MS 600000  // auto-sync RAM cache to NVS every 10 min
 
 struct TripEntry {
     uint32_t timestamp_ms;   // millis() since boot
@@ -56,8 +64,13 @@ public:
                 int tmpm_c,
                 int potnorm);  // throttle 0-1000
 
-    // Erases all entries from NVS
+    // Erases all entries from RAM and NVS
     void clear();
+
+    // Force-flush the in-memory RAM cache to NVS. Called automatically every
+    // TRIPLOG_SYNC_INTERVAL_MS from update(), and explicitly from main.cpp
+    // when the VCU CAN link drops (ignition off) so a drive isn't lost.
+    void sync();
 
     int  getEntryCount() const { return _count; }
     int  getCount()      const { return _count; }
@@ -70,7 +83,9 @@ public:
     void entryToCSVRow(const TripEntry& e, int rowNum, char* outBuf, size_t outLen) const;
 
 private:
-    TripLogger() : _count(0), _startIdx(0), _lastLogTime(0) {}
+    TripLogger() : _count(0), _startIdx(0), _lastLogTime(0), _dirty(false), _lastSyncTime(0) {
+        memset(_entries, 0, sizeof(_entries));
+    }
     TripLogger(const TripLogger&) = delete;
     TripLogger& operator=(const TripLogger&) = delete;
 
@@ -78,6 +93,12 @@ private:
     int      _count;       // number of valid entries, capped at MAX
     int      _startIdx;    // slot index of the oldest entry (ring head)
     uint32_t _lastLogTime;
+
+    // RAM cache — all reads/writes during normal operation happen here;
+    // NVS is only opened for the initial load and periodic sync() flushes.
+    TripEntry _entries[TRIPLOG_MAX_ENTRIES];
+    bool      _dirty;
+    uint32_t  _lastSyncTime;
 
     void   writeSlot(int slot, const TripEntry& e);
     bool   readSlot (int slot, TripEntry& e) const;

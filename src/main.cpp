@@ -15,6 +15,7 @@
 #include "EfficiencyTracker.h"
 #include "Immobilizer.h"
 #include "SDOManager.h"
+#include <esp_task_wdt.h>
 
 // ── Firmware version strings — update on each release ────────────────────────
 #define DIAL_FW_VERSION   "v2.6.0"   // M5Dial firmware version
@@ -30,7 +31,6 @@ Immobilizer immobilizer;
 // State tracking
 bool systemReady = false;
 bool wifiMode = false;
-bool lvglSuspended = false;
 uint32_t lastParamRequestTime = 0;
 uint8_t currentParamIndex = 0;
 uint8_t lastOpmode = 255;  // opmode change detection (255 = uninitialised)
@@ -108,40 +108,10 @@ void onSDOResult(const SDOResult& result) {
 }
 
 // ============================================================================
-// WiFi mode helpers
-// ============================================================================
-
-void suspendLVGL() {
-    lvglSuspended = true;
-    #if DEBUG_SERIAL
-    Serial.println("[UI] LVGL suspended for WiFi mode");
-    #endif
-}
-
-void resumeLVGL() {
-    lvglSuspended = false;
-    // Force LVGL to redraw everything from scratch
-    lv_obj_invalidate(lv_scr_act());
-    #if DEBUG_SERIAL
-    Serial.println("[UI] LVGL resumed");
-    #endif
-}
-
-// ============================================================================
 // Input callbacks
 // ============================================================================
 
 void onEncoderRotate(int32_t delta) {
-    if (wifiMode) {
-        // Any rotation exits WiFi mode
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        return;
-    }
-
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     // Lock screen
@@ -316,28 +286,6 @@ void onButtonClick() {
         }
         return;
     }
-
-    if (!wifiMode) {
-        wifiMode = true;
-        immobilizer.setBLEEnabled(false);  // pause BLE to avoid radio contention
-        wifiManager.startAP();
-        uiManager.setScreen(SCREEN_WIFI);
-        uiManager.updateWifiScreen(wifiManager.getIPAddress());
-        for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
-        lvglSuspended = true;
-        #if DEBUG_SERIAL
-        Serial.println("WiFi mode enabled");
-        #endif
-    } else {
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        #if DEBUG_SERIAL
-        Serial.println("WiFi mode disabled");
-        #endif
-    }
 }
 
 void onButtonDoubleClick() {
@@ -358,14 +306,6 @@ void onButtonTripleClick() {
 
 void onButtonLongPress() {
     ScreenID currentScreen = uiManager.getCurrentScreen();
-
-    if (wifiMode) {
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        return;
-    }
 
     // Long-press from any screen while unlocked → navigate to lock screen.
     // Actual locking requires a deliberate tap on that screen (two-step safety).
@@ -402,20 +342,35 @@ void onTouchPress(uint16_t x, uint16_t y) {
 }
 
 void onTouchTap(uint16_t x, uint16_t y) {
-    if (wifiMode) {
-        // Touch exits WiFi mode
-        wifiMode = false;
-        wifiManager.stopAP(); immobilizer.setBLEEnabled(true);
-        uiManager.resetWifiScreen();
-        resumeLVGL();
-        uiManager.setScreen(SCREEN_DASHBOARD);
-        return;
-    }
-
     ScreenID currentScreen = uiManager.getCurrentScreen();
 
     // Lock screen handled by onTouchPress — nothing more to do here
     if (currentScreen == SCREEN_LOCK) return;
+
+    // WiFi Config screen: tap toggles background WiFi state.
+    // WiFi and BLE keyless entry share the 2.4GHz radio, so they're mutually
+    // exclusive — starting WiFi pauses BLE, stopping it resumes BLE.
+    if (currentScreen == SCREEN_WIFI) {
+        // Debounce: ignore taps for 600ms after arrival — same capacitive-bezel
+        // spurious-touch issue documented on the Settings screen below. Without
+        // this, rotating onto or off of the WiFi screen can fire a phantom tap
+        // that immediately toggles WiFi back off.
+        if (millis() - uiManager.getWifiArrivalTime() < 600) return;
+        if (wifiMode) {
+            wifiMode = false;
+            wifiManager.stopAP();
+            immobilizer.setBLEEnabled(true);
+            uiManager.resetWifiScreen();
+            uiManager.showSuccess("WiFi Stopped");
+        } else {
+            wifiMode = true;
+            wifiManager.startAP();
+            immobilizer.setBLEEnabled(false);
+            uiManager.updateWifiScreen("192.168.4.1");
+            uiManager.showSuccess("WiFi Started\nBrowse 192.168.4.1");
+        }
+        return;
+    }
 
     // Settings screen: tap activates the highlighted menu item.
     // Debounce: ignore taps for 600ms after arrival — rotating the M5Dial
@@ -496,13 +451,31 @@ void pollNextSDOParam() {
 }
 
 // ============================================================================
+// networkTask — runs pinned to Core 0 so WiFi/web-server servicing never
+// steals cycles from the Core 1 loop() task driving CAN polling + LVGL
+// rendering. Replaces the old lvglSuspended "freeze the UI while browsing"
+// hack — the dashboard now stays live and smooth while WiFi mode is active.
+// ============================================================================
+void networkTask(void* pvParameters) {
+    #if DEBUG_SERIAL
+    Serial.printf("[Main] Network task started on Core %d\n", xPortGetCoreID());
+    #endif
+    for (;;) {
+        if (wifiMode) {
+            wifiManager.update();
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+// ============================================================================
 // setup
 // ============================================================================
 
 void setup() {
     #if DEBUG_SERIAL
     Serial.begin(115200);
-    delay(1000);
+    vTaskDelay(pdMS_TO_TICKS(1000));
     Serial.println("ZombieVerter Display - M5Stack Dial");
     Serial.println("=============================================");
     #endif
@@ -511,7 +484,7 @@ void setup() {
         #if DEBUG_SERIAL
         Serial.println("Hardware init failed!");
         #endif
-        while (1) delay(100);
+        while (1) vTaskDelay(pdMS_TO_TICKS(100));
     }
     #if DEBUG_SERIAL
     Serial.println("Hardware initialized");
@@ -524,7 +497,7 @@ void setup() {
     uint32_t splashStart = millis();
     while (millis() - splashStart < 2000) {
         lv_timer_handler();
-        delay(5);
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     if (!canManager.init()) {
@@ -562,7 +535,6 @@ void setup() {
     CANMonitor::instance().init(&canManager);
 
     wifiMode = false;
-    lvglSuspended = false;
 
     // ---------------------------------------------------------------------------
     // Parameter loading (controlled by fetchOnBoot NVS toggle):
@@ -571,7 +543,7 @@ void setup() {
     // ---------------------------------------------------------------------------
     bool paramsLoaded = false;
     bool fetchOnBoot = false;
-    
+
     // Read fetch-on-boot preference from NVS
     {
         Preferences prefs;
@@ -589,17 +561,17 @@ void setup() {
             Serial.println("[Fetch] Heap too low — skipping auto-fetch");
             Serial.println("[Fetch] Use web UI Refetch button if params changed");
             uiManager.showFetchStatus("Heap low\nSkipping fetch");
-            delay(1500);
+            vTaskDelay(pdMS_TO_TICKS(1500));
         } else {
             Serial.println("[Fetch] Auto-fetch enabled — attempting VCU download...");
             uiManager.showFetchStatus("Fetching params\nfrom VCU...");
-            for (int i = 0; i < 3; i++) { lv_timer_handler(); delay(10); }
+            for (int i = 0; i < 3; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
 
             FetchResult fetchResult = canManager.fetchParamsFromVCU();
 
             if (fetchResult == FetchResult::SUCCESS) {
                 Serial.printf("[Fetch] Success: %d parameters\n", canManager.getParameterCount());
-                
+
                 // Clear the fetchOnBoot flag so next boot loads from SPIFFS (no infinite loop)
                 {
                     Preferences prefs;
@@ -608,16 +580,16 @@ void setup() {
                     prefs.end();
                     Serial.println("[Fetch] Cleared fetchOnBoot flag for next boot");
                 }
-                
+
                 // Reboot for clean heap state — ensures WiFi/GVRET work reliably
                 uiManager.showFetchStatus("VCU params loaded!\nRebooting...");
-                delay(2000);
+                vTaskDelay(pdMS_TO_TICKS(2000));
                 ESP.restart();
                 // Execution stops here — next boot has clean heap
             } else {
                 Serial.printf("[Fetch] Failed (%d) — trying SPIFFS fallback\n", (int)fetchResult);
                 uiManager.showFetchStatus("VCU unavailable\nLoading cached...");
-                delay(1000);
+                vTaskDelay(pdMS_TO_TICKS(1000));
             }
         }
     } else {
@@ -634,7 +606,7 @@ void setup() {
                     Serial.printf("[Params] Loaded %d from LittleFS\n", canManager.getParameterCount());
                     paramsLoaded = true;
                     uiManager.showFetchStatus("Cached params\nloaded OK");
-                    delay(1000);
+                    vTaskDelay(pdMS_TO_TICKS(1000));
                 }
                 paramFile.close();
             } else {
@@ -648,7 +620,7 @@ void setup() {
     if (!paramsLoaded) {
         Serial.println("[Params] Using sample parameters only");
         uiManager.showFetchStatus("Using defaults\nConnect VCU!");
-        delay(1500);
+        vTaskDelay(pdMS_TO_TICKS(1500));
     }
 
     // Invalidate cache after params load so pointers are resolved fresh on first loop
@@ -703,7 +675,7 @@ void setup() {
         uiManager.showWarning(msg);
     });
 
-    // Initialize trip logger (reads existing NVS ring buffer state)
+    // Initialize trip logger (reads existing NVS ring buffer state into RAM)
     TripLogger::getInstance().begin();
 
     // Fault logger — reads existing NVS fault history
@@ -732,7 +704,7 @@ void setup() {
     });
 
     // Brief pause so user can see the status message
-    for (int i = 0; i < 100; i++) { lv_timer_handler(); delay(10); }
+    for (int i = 0; i < 100; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
 
     inputManager.setOnEncoderRotate(onEncoderRotate);
     inputManager.setOnButtonClick(onButtonClick);
@@ -749,19 +721,41 @@ void setup() {
         uiManager.setScreen(SCREEN_DASHBOARD);
         Serial.println("[Main] Immobilizer disabled — starting at Dashboard");
     }
+
+    // Launch FreeRTOS network task on Core 0 — WiFi/web server servicing runs
+    // independently of the Core 1 loop() task from here on.
+    xTaskCreatePinnedToCore(
+        networkTask,
+        "NetworkTask",
+        4096,
+        NULL,
+        1,
+        NULL,
+        0
+    );
+
     systemReady = true;
+
+    // Initialize ESP-IDF Task Watchdog Timer (3 seconds, panic/reset = true).
+    // loop() must call esp_task_wdt_reset() every iteration or the MCU resets —
+    // this catches any future blocking call that stalls the main loop.
+    #if DEBUG_SERIAL
+    Serial.println("[Main] Initializing Task Watchdog (3s)...");
+    #endif
+    esp_task_wdt_init(3, true);
+    esp_task_wdt_add(NULL);  // Add current task (main loopTask) to TWDT
 
     #if DEBUG_SERIAL
     Serial.println("System ready!");
     Serial.println("=============================================");
     Serial.println("Controls:");
     Serial.println("  Rotate: Switch screens");
-    Serial.println("  Click: Toggle WiFi mode");
+    Serial.println("  Click: Enter/exit edit mode on editable screens");
     Serial.println("  Double-click: (Reserved)");
     Serial.println("  Long-press: Back to Dashboard");
     Serial.println("=============================================");
     Serial.println("WiFi Mode:");
-    Serial.println("  Click button to enable WiFi AP");
+    Serial.println("  Navigate to WiFi Config screen, tap to toggle AP");
     Serial.println("  Connect to: " WIFI_AP_SSID);
     Serial.println("  Password: " WIFI_AP_PASSWORD);
     Serial.println("  Browse to: 192.168.4.1");
@@ -797,63 +791,47 @@ void loop() {
     inputManager.update();
     immobilizer.update();
 
-    if (wifiMode) {
-        wifiManager.update();
-        canManager.update();
-
-        // Handle logo upload — reload the splash screen widget without reboot
-        if (wifiManager.isLogoReloadRequested()) {
-            wifiManager.clearLogoReloadRequest();
-            Serial.println("[Main] Logo reload triggered from web UI");
-            uiManager.reloadLogo();
-            // Briefly show splash with confirmation message, then return to WiFi screen
-            lvglSuspended = false;
-            uiManager.setScreen(SCREEN_SPLASH);
-            uiManager.showFetchStatus("Logo updated!");
-            for (int i = 0; i < 150; i++) { lv_timer_handler(); delay(10); }
-            lvglSuspended = true;
-            uiManager.setScreen(SCREEN_WIFI);
-        }
-
-        // Handle refetch request from web UI
-        if (wifiManager.isRefetchRequested()) {
-            wifiManager.clearRefetchRequest();
-            Serial.println("[Main] Refetch triggered from web UI");
-            // Show status on dial — briefly resume LVGL
-            lvglSuspended = false;
-            uiManager.setScreen(SCREEN_SPLASH);
-            uiManager.showFetchStatus("Refetching from\nVCU...");
-            for (int i = 0; i < 10; i++) { lv_timer_handler(); delay(10); }
-            lvglSuspended = true;
-
-            // Stop SDO manager, run fetch, restart SDO manager
-            FetchResult result = canManager.fetchParamsFromVCU();
-
-            // Invalidate param cache — table has been reloaded
-            invalidateParamCache();
-
-            lvglSuspended = false;
-            if (result == FetchResult::SUCCESS) {
-                uiManager.showFetchStatus("VCU params\nreloaded!");
-                Serial.printf("[Main] Refetch success — %d params\n",
-                    canManager.getParameterCount());
-            } else {
-                uiManager.showFetchStatus("Refetch failed\nUsing cached");
-                Serial.println("[Main] Refetch failed");
-            }
-            for (int i = 0; i < 200; i++) { lv_timer_handler(); delay(10); }
-            lvglSuspended = true;
-            uiManager.setScreen(SCREEN_WIFI);
-        }
-
-        // Keep SDO polling running in WiFi mode so spot values stay live
-        pollNextSDOParam();
-
-        vTaskDelay(pdMS_TO_TICKS(5));
-        return;
+    // Handle background logo upload or parameters refetch from Web UI.
+    // These used to be gated behind "if (wifiMode)" with LVGL suspended for
+    // the duration; now that WiFi servicing runs on its own core, CAN + LVGL
+    // keep running underneath, so we just handle the request when it arrives.
+    if (wifiManager.isLogoReloadRequested()) {
+        wifiManager.clearLogoReloadRequest();
+        Serial.println("[Main] Logo reload triggered from web UI");
+        uiManager.reloadLogo();
+        uiManager.setScreen(SCREEN_SPLASH);
+        uiManager.showFetchStatus("Logo updated!");
+        for (int i = 0; i < 150; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+        uiManager.setScreen(SCREEN_DASHBOARD);
     }
 
-    // Normal mode: full CAN + LVGL update
+    if (wifiManager.isRefetchRequested()) {
+        wifiManager.clearRefetchRequest();
+        Serial.println("[Main] Refetch triggered from web UI");
+        uiManager.setScreen(SCREEN_SPLASH);
+        uiManager.showFetchStatus("Refetching from\nVCU...");
+        for (int i = 0; i < 10; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+
+        // Stop SDO manager, run fetch, restart SDO manager
+        FetchResult result = canManager.fetchParamsFromVCU();
+
+        // Invalidate param cache — table has been reloaded
+        invalidateParamCache();
+
+        if (result == FetchResult::SUCCESS) {
+            uiManager.showFetchStatus("VCU params\nreloaded!");
+            Serial.printf("[Main] Refetch success — %d params\n",
+                canManager.getParameterCount());
+        } else {
+            uiManager.showFetchStatus("Refetch failed\nUsing cached");
+            Serial.println("[Main] Refetch failed");
+        }
+        for (int i = 0; i < 200; i++) { lv_timer_handler(); vTaskDelay(pdMS_TO_TICKS(10)); }
+        uiManager.setScreen(SCREEN_DASHBOARD);
+    }
+
+    // Normal mode: full CAN + LVGL update — now runs every loop regardless of
+    // wifiMode, since WiFi servicing has moved to networkTask on Core 0.
     canManager.update();
 
     // Resolve cached parameter pointers (no-op after first successful resolution)
@@ -871,6 +849,20 @@ void loop() {
         g_pTmpm    ? g_pTmpm->getValueAsInt()               : 0,   // tmpm_c
         g_pPotnorm ? g_pPotnorm->getValueAsInt()            : 0    // potnorm (0-1000)
     );
+
+    // Sync trip log RAM cache to flash on connection loss (vehicle powered off)
+    // so a drive's data isn't lost between the 10-minute background auto-syncs.
+    // NOTE: requires CANDataManager::isConnected() — verify this exists in
+    // CANData.h before building; see conversation notes if it needs adding.
+    {
+        static bool lastCanConnected = false;
+        bool canConnected = canManager.isConnected();
+        if (lastCanConnected && !canConnected) {
+            Serial.println("[Main] VCU disconnected — syncing trip log to flash");
+            TripLogger::getInstance().sync();
+        }
+        lastCanConnected = canConnected;
+    }
 
     // Opmode change detection — uses cached pointer, no linear search
     if (g_pOpmode) {
@@ -910,9 +902,10 @@ void loop() {
     // Round-robin SDO parameter polling
     pollNextSDOParam();
 
-    if (!lvglSuspended) {
-        uiManager.update();
-    }
+    uiManager.update();
 
-    delay(10);
-}
+    // Feed the Task Watchdog Timer
+    esp_task_wdt_reset();
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+}

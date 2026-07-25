@@ -100,9 +100,9 @@ void Immobilizer::init(SDOManager* sdo) {
     // Init RFID — arozcan I2C fork, address 0x28 via M5.In_I2C
     // begin() calls PCD_Init() which does reset, timer setup, PCD_AntennaOn()
 #if RFID_ENABLED
-    delay(100);
+    vTaskDelay(pdMS_TO_TICKS(100));
     rfid.begin();
-    delay(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
     rfid.PCD_Init();
     byte ver = rfid.PCD_ReadRegister(MFRC522::VersionReg);
     if (ver == 0x00 || ver == 0xFF) {

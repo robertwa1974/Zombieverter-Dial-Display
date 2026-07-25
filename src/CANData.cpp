@@ -153,7 +153,7 @@ FetchResult CANDataManager::fetchParamsFromVCU() {
     // Without this, the Dial may send the initiate upload request before
     // the VCU is ready and get no response.
     Serial.println("[Fetch] Waiting 2s for VCU SDO stack to initialise...");
-    delay(2000);
+    vTaskDelay(pdMS_TO_TICKS(2000));
 
     // Drain any broadcast frames that accumulated during the delay
     // so the TWAI queue is empty before we start the SDO transfer.
@@ -171,7 +171,7 @@ FetchResult CANDataManager::fetchParamsFromVCU() {
     for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         if (attempt > 1) {
             Serial.printf("[Fetch] Retrying... attempt %d/%d\n", attempt, MAX_ATTEMPTS);
-            delay(1000);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             // Drain again between retries
             twai_message_t discard;
             while (twai_receive(&discard, 0) == ESP_OK) {}
