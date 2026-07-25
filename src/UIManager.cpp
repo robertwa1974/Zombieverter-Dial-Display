@@ -2,18 +2,20 @@
 #include "Immobilizer.h"
 #include "HealthChecker.h"
 #include "EfficiencyTracker.h"
-#include <SPIFFS.h>
+#include <LittleFS.h>
 #include <esp_heap_caps.h>
 #include "FaultLogger.h"
 #include <M5GFX.h>
 
 // Static instance for callbacks
+extern bool wifiMode;
+
 UIManager* UIManager::instance = nullptr;
 
 UIManager::UIManager() 
     : canManager(nullptr), immobilizer(nullptr), currentScreen(SCREEN_SPLASH), 
       lastUpdateTime(0), buf1(nullptr), buf2(nullptr), editMode(false), lockPinPadVisible(false),
-      settings_selected_item(0), settingsArrivalTime(0) {
+      settings_selected_item(0), settingsArrivalTime(0), wifiArrivalTime(0) {
     strncpy(dialFWVersion, "---", sizeof(dialFWVersion));
     strncpy(uiFWVersion,   "---", sizeof(uiFWVersion));
     instance = this;
@@ -205,6 +207,16 @@ void UIManager::setScreen(ScreenID screen) {
                                          lv_palette_main(LV_PALETTE_CYAN), 0);
         }
     }
+    // When entering the WiFi screen, update status based on current wifiMode
+    if (screen == SCREEN_WIFI) {
+        if (wifiMode) {
+            updateWifiScreen("192.168.4.1");
+        } else {
+            resetWifiScreen();
+        }
+        wifiArrivalTime = millis();   // for tap debounce in main.cpp
+    }
+
     currentScreen = screen;
     if (screens[screen]) {
         lv_scr_load_anim(screens[screen], LV_SCR_LOAD_ANIM_FADE_IN, 200, 0, false);
@@ -283,8 +295,8 @@ void UIManager::createSplashScreen() {
     // /logo.bin: 4-byte header (uint16 w, uint16 h) + raw RGB565 pixels
     bool logoLoaded = false;
 
-    if (SPIFFS.exists("/logo.bin")) {
-        File f = SPIFFS.open("/logo.bin", "r");
+    if (LittleFS.exists("/logo.bin")) {
+        File f = LittleFS.open("/logo.bin", "r");
         if (f) {
             uint16_t w = 0, h = 0;
             f.read((uint8_t*)&w, 2);
@@ -373,7 +385,7 @@ void UIManager::createSplashScreen() {
 }
 
 // Called from main.cpp after a successful logo upload while WiFi is active.
-// Loads /logo.bin from SPIFFS into the existing splash screen widget without
+// Loads /logo.bin from LittleFS into the existing splash screen widget without
 // requiring a reboot. Safe to call while WiFi is running — splash is not the
 // active screen so LVGL won't be rendering it during the update.
 void UIManager::reloadLogo() {
@@ -391,11 +403,11 @@ void UIManager::reloadLogo() {
         splash_logo_img = nullptr;
     }
 
-    if (!SPIFFS.exists("/logo.bin")) {
+    if (!LittleFS.exists("/logo.bin")) {
         Serial.println("[SPLASH] reloadLogo: no logo.bin");
         return;
     }
-    File f = SPIFFS.open("/logo.bin", "r");
+    File f = LittleFS.open("/logo.bin", "r");
     if (!f) return;
 
     uint16_t w = 0, h = 0;
@@ -999,7 +1011,7 @@ void UIManager::createWiFiScreen() {
     lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, 35);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
-    lv_label_set_text(inst, "Click button to deactivate");
+    lv_label_set_text(inst, "Tap screen to toggle WiFi");
     lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
@@ -1110,7 +1122,11 @@ void UIManager::updateDashboard() {
 
     CANParameter* voltage = canManager->getParameterByName("udc");
     if (voltage) {
-        lv_label_set_text_fmt(dash_voltage_label, "%dV", voltage->getValueAsInt());
+        if (wifiMode) {
+            lv_label_set_text_fmt(dash_voltage_label, "%dV  " LV_SYMBOL_WIFI, voltage->getValueAsInt());
+        } else {
+            lv_label_set_text_fmt(dash_voltage_label, "%dV", voltage->getValueAsInt());
+        }
     }
 
     CANParameter* soc = canManager->getParameterByName("SOC");

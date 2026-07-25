@@ -41,20 +41,20 @@ class UIManager {
 public:
     UIManager();
     ~UIManager();
-    
+
     bool init(CANDataManager* canMgr, Immobilizer* immob = nullptr);
     void update();
     void setScreen(ScreenID screen);
     ScreenID getCurrentScreen() { return currentScreen; }
     ScreenID getNextScreen();
     ScreenID getPreviousScreen();
-    
+
     // Immobilizer integration
     void setImmobilizer(Immobilizer* immob) { immobilizer = immob; }
     void updateLockScreen();  // Update lock screen PIN display
     void showLockPinPad();    // Reveal PIN pad (called on touch tap while locked)
     bool isLockPinPadVisible() const { return lockPinPadVisible; }
-    
+
     // Edit mode control (for Gear, Motor, Regen, ThrotMax, BrakeRegen screens)
     void toggleEditMode();
     bool isEditMode() { return editMode; }
@@ -73,19 +73,20 @@ public:
     int  getSettingsSelectedItem() const { return settings_selected_item; }
     int  getSettingsMenuCount()    const { return SETTINGS_MENU_COUNT; }
     uint32_t getSettingsArrivalTime() const { return settingsArrivalTime; }
+    uint32_t getWifiArrivalTime() const { return wifiArrivalTime; }  // for tap debounce in main.cpp
 
     // Screen visibility mask — one bit per ScreenID; 1=enabled, 0=hidden from dial rotation
     // Dashboard (bit 2), WiFi (bit 10), Settings (bit 11) are always forced on.
     void     setScreenMask(uint16_t mask) { screenMask = mask | SCREEN_MASK_FORCED; }
     uint16_t getScreenMask()       const  { return screenMask; }
     static UIManager* getInstance()       { return instance; }
-    
+
 private:
     // LVGL Setup
     static void lvgl_flush_cb(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p);
     static void lvgl_encoder_read_cb(lv_indev_drv_t* indev_drv, lv_indev_data_t* data);
     void setupLVGL();
-    
+
     // Screen creation functions
     void createSplashScreen();
     void createLockScreen();  // Immobilizer lock screen
@@ -103,7 +104,7 @@ private:
     void createSettingsScreen();
     void createChargingScreen();
     void createHealthCheckScreen();
-    
+
     // Screen update functions
     void updateDashboard();
     void updatePower();
@@ -117,22 +118,22 @@ private:
     void updateBrakeRegen();
     void updateCharging();
     void updateHealthCheck();
-    
+
     // Helper functions
     void clearAllScreens();
     lv_color_t getColorForValue(int32_t value, int32_t min_val, int32_t max_val);
     void setMeterValue(lv_obj_t* meter, lv_meter_indicator_t* indic, int32_t value, int32_t min_val, int32_t max_val);
-    
+
     // LVGL Objects
     lv_disp_draw_buf_t draw_buf;
     lv_color_t *buf1;
     lv_color_t *buf2;
     lv_disp_drv_t disp_drv;
     lv_indev_drv_t indev_drv;
-    
+
     // Screens
     lv_obj_t* screens[SCREEN_COUNT];
-    
+
     // Dashboard widgets
     lv_obj_t* dash_rpm_meter;
     lv_meter_indicator_t* dash_rpm_needle;
@@ -142,7 +143,7 @@ private:
     lv_obj_t* dash_power_label;
     lv_obj_t* dash_soc_arc;
     lv_meter_indicator_t* dash_soc_indicator;
-    
+
     // Power screen widgets
     lv_obj_t* power_meter;
     lv_meter_indicator_t* power_needle;
@@ -151,7 +152,7 @@ private:
     lv_obj_t* power_voltage_label;
     lv_obj_t* power_current_label;
     lv_obj_t* power_soc_label;
-    
+
     // Temperature screen widgets
     lv_obj_t* temp_motor_arc;
     lv_meter_indicator_t* temp_motor_indicator;
@@ -160,7 +161,7 @@ private:
     lv_meter_indicator_t* temp_inverter_indicator;
     lv_obj_t* temp_inverter_label;
     lv_obj_t* temp_battery_label;
-    
+
     // Battery screen widgets
     lv_obj_t* battery_soc_meter;
     lv_meter_indicator_t* battery_soc_needle;
@@ -169,24 +170,24 @@ private:
     lv_obj_t* battery_voltage_label;
     lv_obj_t* battery_current_label;
     lv_obj_t* battery_temp_label;
-    
+
     // BMS screen widgets
     lv_obj_t* bms_cell_max_label;
     lv_obj_t* bms_cell_min_label;
     lv_obj_t* bms_cell_delta_label;
     lv_obj_t* bms_temp_max_label;
     lv_obj_t* bms_soc_bar;
-    
+
     // Gear screen widgets
     lv_obj_t* gear_current_label;
     lv_obj_t* gear_option_labels[4];
     lv_obj_t* gear_indicators[4];
-    
+
     // Motor screen widgets
     lv_obj_t* motor_current_label;
     lv_obj_t* motor_option_labels[4];
     lv_obj_t* motor_indicators[4];
-    
+
     // Lock screen widgets
     lv_obj_t* lock_title_label;
     lv_obj_t* lock_status_label;
@@ -194,7 +195,7 @@ private:
     lv_obj_t* lock_digit_label;
     lv_obj_t* lock_instruction_label;
     lv_obj_t* lock_icon;
-    
+
     // Regen screen widgets
     lv_obj_t* regen_arc;
     lv_meter_indicator_t* regen_indicator;
@@ -210,7 +211,7 @@ private:
     lv_obj_t* brakeregen_arc;
     lv_obj_t* brakeregen_value_label;
     lv_obj_t* brakeregen_title_label;
-    
+
     // WiFi screen widgets
     lv_obj_t* wifi_ssid_label;
     lv_obj_t* wifi_password_label;
@@ -218,7 +219,7 @@ private:
     lv_obj_t* warningLabel = nullptr;
     uint32_t  warningExpiry = 0;
     lv_obj_t* wifi_status_label;
-    
+
     // Settings screen widgets
     lv_obj_t* settings_can_status_label;
     lv_obj_t* settings_param_count_label;
@@ -229,6 +230,7 @@ private:
     lv_obj_t* settings_menu_indicators[6];
     int       settings_selected_item;      // currently highlighted item
     uint32_t  settingsArrivalTime;         // millis() when settings screen was entered
+    uint32_t  wifiArrivalTime;             // millis() when WiFi screen was entered — tap debounce
 
     // Charging screen widgets
     lv_obj_t* chg_title_label;
@@ -260,7 +262,7 @@ private:
     lv_obj_t*    splash_logo_img      = nullptr;   // lv_img widget (nullptr if no logo)
     lv_img_dsc_t splash_logo_dsc;                  // LVGL image descriptor
     uint8_t*     splash_logo_buf      = nullptr;   // heap buffer for raw RGB565 pixels
-    
+
     // Data
     CANDataManager* canManager;
     Immobilizer* immobilizer;  // Security system
@@ -268,7 +270,7 @@ private:
     uint32_t lastUpdateTime;
     bool editMode;          // For programmable screens (Gear, Motor, Regen, ThrotMax, BrakeRegen)
     bool lockPinPadVisible; // Lock screen: false=padlock view, true=PIN entry view
-    
+
     // Version info — set from main.cpp via setVersionInfo()
     char dialFWVersion[16];
     char uiFWVersion[16];

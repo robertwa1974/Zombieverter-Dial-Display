@@ -230,7 +230,7 @@ void WiFiManager::startAP() {
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
-    delay(100); // let AP stabilize before starting server
+    vTaskDelay(pdMS_TO_TICKS(100)); // let AP stabilize before starting server
 
     Serial.printf("[WiFi] AP started: %s / %s\n", WIFI_AP_SSID, WIFI_AP_PASSWORD);
     Serial.printf("[WiFi] IP: %s\n", WiFi.softAPIP().toString().c_str());
@@ -484,7 +484,7 @@ void WiFiManager::startServer() {
         [](AsyncWebServerRequest* request) {
             request->send(Update.hasError() ? 500 : 200, "text/plain",
                           Update.hasError() ? "Update FAILED" : "Update OK — rebooting");
-            delay(500);
+            vTaskDelay(pdMS_TO_TICKS(500));
             ESP.restart();
         },
         [](AsyncWebServerRequest* request, const String& filename,
