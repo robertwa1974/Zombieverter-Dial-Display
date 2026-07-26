@@ -62,21 +62,15 @@ jobs:
       - name: Locate build artifacts
         run: |
           BUILD_DIR=".pio/build/m5stack-dial"
-          FRAMEWORK_DIR=$(python -c "import platformio; print(platformio.__file__)" | xargs dirname)
-
-          # Find bootloader — it lives inside the PlatformIO packages
-          BOOTLOADER=$(find ~/.platformio -name "bootloader_qio_80m.bin" 2>/dev/null | head -1)
-          if [ -z "$BOOTLOADER" ]; then
-            BOOTLOADER=$(find ~/.platformio -name "bootloader*.bin" 2>/dev/null | head -1)
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+          if [ ! -f "$BUILD_DIR/bootloader.bin" ]; then
+            echo "ERROR: $BUILD_DIR/bootloader.bin not found"
+            exit 1
           fi
-          echo "BOOTLOADER=$BOOTLOADER" >> $GITHUB_ENV
-
-          # boot_app0 (OTA marker)
+          echo "BOOTLOADER=$BUILD_DIR/bootloader.bin" >> $GITHUB_ENV
           BOOT_APP0=$(find ~/.platformio -name "boot_app0.bin" 2>/dev/null | head -1)
           echo "BOOT_APP0=$BOOT_APP0" >> $GITHUB_ENV
-
-          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
-          echo "Bootloader: $BOOTLOADER"
+          echo "Bootloader: $BUILD_DIR/bootloader.bin"
           echo "boot_app0:  $BOOT_APP0"
           ls -la $BUILD_DIR/
 
