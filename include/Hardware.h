@@ -38,6 +38,9 @@ public:
 #if defined(BOARD_MATOUCH21)
     // Touch I2C bus (SDA 17 / SCL 18) — shareable with a future RFID reader
     static TwoWire& i2cBus();
+
+    // Last CST826 reading before the TOUCH_SWAP/MIRROR transform (bring-up)
+    static bool getTouchRaw(int16_t& x, int16_t& y);
 #endif
     
     // Power management

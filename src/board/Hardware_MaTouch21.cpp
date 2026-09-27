@@ -18,6 +18,8 @@ static Arduino_RGB_Display*   gfx      = nullptr;
 static CST826      touchCtl(TOUCH_I2C_ADDR);
 static TouchDetail touchDetail = {false, false, 0, 0};
 static bool        touchDown   = false;
+static int16_t     touchRawX   = 0;
+static int16_t     touchRawY   = 0;
 static uint32_t    lastTouchPollMs = 0;
 static const uint32_t TOUCH_POLL_MS = 10;
 
@@ -67,6 +69,17 @@ void Hardware::update() {
     int16_t x, y;
     bool down = touchCtl.read(x, y);
     if (down) {
+        touchRawX = x;
+        touchRawY = y;
+#if TOUCH_SWAP_XY
+        int16_t t = x; x = y; y = t;
+#endif
+#if TOUCH_MIRROR_X
+        x = (SCREEN_WIDTH - 1) - x;
+#endif
+#if TOUCH_MIRROR_Y
+        y = (SCREEN_HEIGHT - 1) - y;
+#endif
         touchDetail.x = x;
         touchDetail.y = y;
     }
@@ -111,6 +124,12 @@ TouchDetail Hardware::getTouch() {
 
 TwoWire& Hardware::i2cBus() {
     return Wire;
+}
+
+bool Hardware::getTouchRaw(int16_t& x, int16_t& y) {
+    x = touchRawX;
+    y = touchRawY;
+    return touchDown;
 }
 
 // ── No power-hold, LED or battery on this board ─────────────────────────────

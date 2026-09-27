@@ -135,6 +135,12 @@
 #define TOUCH_RST           -1
 #define TOUCH_I2C_ADDR      0x15
 
+// CST826 -> panel coordinate transform, applied in Hardware::update().
+// Unverified defaults: the bring-up Touch screen reports what to set here.
+#define TOUCH_SWAP_XY       0
+#define TOUCH_MIRROR_X      0
+#define TOUCH_MIRROR_Y      0
+
 // CAN Bus — TWAI on the UART connector (external SN65HVD230).
 // Console stays on native USB CDC, so GPIO43/44 are free.
 #define CAN_TX_PIN          43
