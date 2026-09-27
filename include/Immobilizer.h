@@ -2,19 +2,25 @@
 #define IMMOBILIZER_H
 
 #include <Arduino.h>
+#include "Config.h"
+#if defined(BOARD_M5DIAL)
 #include <M5Unified.h>
+#endif
 #include <Preferences.h>
 #include <functional>
+#if HAS_RFID
 #include "MFRC522.h"
-#include "Config.h"
+#endif
 #include "SDOManager.h"
 
 // ============================================================================
 // RFID — WS1850S built into M5Dial, I2C address 0x28
 // Uses arozcan I2C MFRC522 fork in lib/MFRC522/
 // Call rfid.begin() after M5.begin() — begin() calls PCD_Init() internally.
+// Boards without a reader (HAS_RFID=0 in BoardConfig.h) compile the RFID code
+// out; fob NVS storage stays so a reader can be added back later.
 // ============================================================================
-#define RFID_ENABLED true
+#define RFID_ENABLED HAS_RFID
 
 // ============================================================================
 // VCU DriveInhibit parameter IDs
@@ -228,8 +234,10 @@ private:
     std::function<void(const char*)> onSuccessCb;
     std::function<void(const char*)> onWarningCb;
 
+#if RFID_ENABLED
     // RFID object — I2C address 0x28, uses M5.In_I2C internally
     MFRC522 rfid = MFRC522(RC522_I2C_ADDRESS);
+#endif
 };
 
 #endif // IMMOBILIZER_H

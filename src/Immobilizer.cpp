@@ -367,6 +367,9 @@ void Immobilizer::toggleLock() {
 // ============================================================================
 
 void Immobilizer::startProgramFob() {
+#if !RFID_ENABLED
+    return;  // no reader on this board — never enter PROGRAM_FOB
+#endif
     if (mode != ImmobMode::UNLOCKED) return;  // must be unlocked first
     mode = ImmobMode::PROGRAM_FOB;
     Serial.println("[IMMOBILIZER] Fob programming mode — tap new fob now");

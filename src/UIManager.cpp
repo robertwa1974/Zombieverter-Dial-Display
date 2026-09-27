@@ -6,6 +6,7 @@
 #include <esp_heap_caps.h>
 #include "FaultLogger.h"
 #include "Hardware.h"
+#include "UIScale.h"   // keep last — defines S()
 
 // Static instance for callbacks
 extern bool wifiMode;
@@ -65,7 +66,7 @@ bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
         lv_palette_main(LV_PALETTE_BLUE),
         lv_palette_main(LV_PALETTE_CYAN),
         true,
-        &lv_font_montserrat_14
+        UI_FONT_14
     );
     lv_disp_set_theme(lv_disp_get_default(), theme);
     
@@ -321,7 +322,7 @@ void UIManager::createSplashScreen() {
                     // Full-screen image widget
                     splash_logo_img = lv_img_create(screens[SCREEN_SPLASH]);
                     lv_img_set_src(splash_logo_img, &splash_logo_dsc);
-                    lv_obj_set_size(splash_logo_img, 240, 240);
+                    lv_obj_set_size(splash_logo_img, S(240), S(240));
                     lv_obj_align(splash_logo_img, LV_ALIGN_CENTER, 0, 0);
 
                     logoLoaded = true;
@@ -339,7 +340,7 @@ void UIManager::createSplashScreen() {
     // ── Bottom overlay bar — shown whether or not logo is present ─────────
     // Dark semi-transparent rectangle across bottom ~40px
     lv_obj_t* overlay = lv_obj_create(screens[SCREEN_SPLASH]);
-    lv_obj_set_size(overlay, 240, 44);
+    lv_obj_set_size(overlay, S(240), S(44));
     lv_obj_align(overlay, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(overlay, logoLoaded ? LV_OPA_70 : LV_OPA_TRANSP, 0);
@@ -351,32 +352,32 @@ void UIManager::createSplashScreen() {
         // Text-only splash — show title and subtitle in centre
         lv_obj_t* title = lv_label_create(screens[SCREEN_SPLASH]);
         lv_label_set_text(title, "ZombieVerter");
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_font(title, UI_FONT_28, 0);
         lv_obj_set_style_text_color(title, lv_palette_main(LV_PALETTE_CYAN), 0);
-        lv_obj_align(title, LV_ALIGN_CENTER, 0, -30);
+        lv_obj_align(title, LV_ALIGN_CENTER, 0, S(-30));
 
         lv_obj_t* subtitle = lv_label_create(screens[SCREEN_SPLASH]);
         lv_label_set_text(subtitle, "M5Dial Display");
-        lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(subtitle, UI_FONT_16, 0);
         lv_obj_set_style_text_color(subtitle, lv_palette_lighten(LV_PALETTE_CYAN, 2), 0);
-        lv_obj_align(subtitle, LV_ALIGN_CENTER, 0, 4);
+        lv_obj_align(subtitle, LV_ALIGN_CENTER, 0, S(4));
     }
 
     // Version label — inside overlay bar, left-aligned
     splash_version_label = lv_label_create(screens[SCREEN_SPLASH]);
     lv_label_set_text(splash_version_label, dialFWVersion);
-    lv_obj_set_style_text_font(splash_version_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(splash_version_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(splash_version_label,
         logoLoaded ? lv_color_white() : lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(splash_version_label, LV_ALIGN_BOTTOM_LEFT, 8, -26);
+    lv_obj_align(splash_version_label, LV_ALIGN_BOTTOM_LEFT, S(8), S(-26));
 
     // Fetch status label — inside overlay bar, centred
     splash_fetch_label = lv_label_create(screens[SCREEN_SPLASH]);
     lv_label_set_text(splash_fetch_label, "");
-    lv_obj_set_style_text_font(splash_fetch_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(splash_fetch_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(splash_fetch_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
     lv_obj_set_style_text_align(splash_fetch_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(splash_fetch_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_align(splash_fetch_label, LV_ALIGN_BOTTOM_MID, 0, S(-8));
     // Child index: logo(0 if present), overlay, [title, subtitle if no logo],
     // version, fetch — showFetchStatus uses last child by counting
 }
@@ -428,7 +429,7 @@ void UIManager::reloadLogo() {
             splash_logo_img = lv_img_create(screens[SCREEN_SPLASH]);
             lv_obj_move_to_index(splash_logo_img, 0);
             lv_img_set_src(splash_logo_img, &splash_logo_dsc);
-            lv_obj_set_size(splash_logo_img, 240, 240);
+            lv_obj_set_size(splash_logo_img, S(240), S(240));
             lv_obj_align(splash_logo_img, LV_ALIGN_CENTER, 0, 0);
             Serial.printf("[SPLASH] reloadLogo: %dx%d loaded OK\n", w, h);
         } else {
@@ -446,38 +447,38 @@ void UIManager::createDashboardScreen() {
     lv_obj_set_style_bg_color(screens[SCREEN_DASHBOARD], lv_color_black(), 0);
     
     dash_rpm_meter = lv_meter_create(screens[SCREEN_DASHBOARD]);
-    lv_obj_set_size(dash_rpm_meter, 200, 200);
+    lv_obj_set_size(dash_rpm_meter, S(200), S(200));
     lv_obj_center(dash_rpm_meter);
     lv_obj_set_style_bg_opa(dash_rpm_meter, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(dash_rpm_meter, 0, 0);
     
     lv_meter_scale_t* scale_rpm = lv_meter_add_scale(dash_rpm_meter);
-    lv_meter_set_scale_ticks(dash_rpm_meter, scale_rpm, 41, 2, 10, lv_palette_main(LV_PALETTE_GREY));
-    lv_meter_set_scale_major_ticks(dash_rpm_meter, scale_rpm, 8, 3, 15, lv_color_white(), 10);
+    lv_meter_set_scale_ticks(dash_rpm_meter, scale_rpm, 41, S(2), S(10), lv_palette_main(LV_PALETTE_GREY));
+    lv_meter_set_scale_major_ticks(dash_rpm_meter, scale_rpm, 8, S(3), S(15), lv_color_white(), S(10));
     lv_meter_set_scale_range(dash_rpm_meter, scale_rpm, 0, 80, 270, 135);
     
-    dash_rpm_arc = lv_meter_add_arc(dash_rpm_meter, scale_rpm, 8, lv_palette_main(LV_PALETTE_CYAN), 0);
+    dash_rpm_arc = lv_meter_add_arc(dash_rpm_meter, scale_rpm, S(8), lv_palette_main(LV_PALETTE_CYAN), 0);
     lv_meter_set_indicator_start_value(dash_rpm_meter, dash_rpm_arc, 0);
     lv_meter_set_indicator_end_value(dash_rpm_meter, dash_rpm_arc, 0);
     
-    dash_rpm_needle = lv_meter_add_needle_line(dash_rpm_meter, scale_rpm, 4, lv_palette_main(LV_PALETTE_CYAN), -10);
+    dash_rpm_needle = lv_meter_add_needle_line(dash_rpm_meter, scale_rpm, S(4), lv_palette_main(LV_PALETTE_CYAN), S(-10));
     
     // RPM numeric label — shown inside meter area
     dash_rpm_label = lv_label_create(screens[SCREEN_DASHBOARD]);
     lv_label_set_text(dash_rpm_label, "0 RPM");
-    lv_obj_set_style_text_font(dash_rpm_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(dash_rpm_label, UI_FONT_16, 0);
     lv_obj_set_style_text_color(dash_rpm_label, lv_palette_main(LV_PALETTE_CYAN), 0);
     lv_obj_set_style_text_align(dash_rpm_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(dash_rpm_label, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_align(dash_rpm_label, LV_ALIGN_CENTER, 0, S(30));
 
     dash_soc_arc = lv_arc_create(screens[SCREEN_DASHBOARD]);
-    lv_obj_set_size(dash_soc_arc, 220, 220);
+    lv_obj_set_size(dash_soc_arc, S(220), S(220));
     lv_obj_center(dash_soc_arc);
     lv_arc_set_rotation(dash_soc_arc, 135);
     lv_arc_set_bg_angles(dash_soc_arc, 0, 270);
     lv_arc_set_value(dash_soc_arc, 0);
-    lv_obj_set_style_arc_width(dash_soc_arc, 10, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(dash_soc_arc, 10, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(dash_soc_arc, S(10), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(dash_soc_arc, S(10), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
     lv_obj_set_style_arc_color(dash_soc_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
     lv_obj_remove_style(dash_soc_arc, NULL, LV_PART_KNOB);
@@ -486,9 +487,9 @@ void UIManager::createDashboardScreen() {
     // Voltage moved to bottom position; kW label removed
     dash_voltage_label = lv_label_create(screens[SCREEN_DASHBOARD]);
     lv_label_set_text(dash_voltage_label, "---V");
-    lv_obj_set_style_text_font(dash_voltage_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(dash_voltage_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(dash_voltage_label, lv_color_white(), 0);
-    lv_obj_align(dash_voltage_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_align(dash_voltage_label, LV_ALIGN_BOTTOM_MID, 0, S(-8));
 
     // dash_power_label kept as hidden member (updateDashboard still calculates kW)
     dash_power_label = lv_label_create(screens[SCREEN_DASHBOARD]);
@@ -502,12 +503,12 @@ void UIManager::createPowerScreen() {
     // Title
     lv_obj_t* title = lv_label_create(screens[SCREEN_POWER]);
     lv_label_set_text(title, "POWER");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_14, 0);
     lv_obj_set_style_text_color(title, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(8));
 
     power_meter = lv_meter_create(screens[SCREEN_POWER]);
-    lv_obj_set_size(power_meter, 220, 220);
+    lv_obj_set_size(power_meter, S(220), S(220));
     lv_obj_center(power_meter);
     lv_obj_set_style_bg_opa(power_meter, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(power_meter, 0, 0);
@@ -515,43 +516,43 @@ void UIManager::createPowerScreen() {
     lv_meter_scale_t* scale = lv_meter_add_scale(power_meter);
     // 41 ticks across 200 units = 5 units/tick. nth_tick=10 → major every 50 units.
     // Labels at: -50, 0, 50, 100, 150
-    lv_meter_set_scale_ticks(power_meter, scale, 41, 2, 10, lv_palette_darken(LV_PALETTE_GREY, 2));
-    lv_meter_set_scale_major_ticks(power_meter, scale, 10, 3, 15, lv_color_white(), 10);
+    lv_meter_set_scale_ticks(power_meter, scale, 41, S(2), S(10), lv_palette_darken(LV_PALETTE_GREY, 2));
+    lv_meter_set_scale_major_ticks(power_meter, scale, 10, S(3), S(15), lv_color_white(), S(10));
     lv_meter_set_scale_range(power_meter, scale, -50, 150, 270, 135);
     
-    lv_meter_indicator_t* arc_regen = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_GREEN), 0);
+    lv_meter_indicator_t* arc_regen = lv_meter_add_arc(power_meter, scale, S(10), lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_meter_set_indicator_start_value(power_meter, arc_regen, -50);
     lv_meter_set_indicator_end_value(power_meter, arc_regen, 0);
     
-    lv_meter_indicator_t* arc_low = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_CYAN), 0);
+    lv_meter_indicator_t* arc_low = lv_meter_add_arc(power_meter, scale, S(10), lv_palette_main(LV_PALETTE_CYAN), 0);
     lv_meter_set_indicator_start_value(power_meter, arc_low, 0);
     lv_meter_set_indicator_end_value(power_meter, arc_low, 50);
     
-    lv_meter_indicator_t* arc_med = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_YELLOW), 0);
+    lv_meter_indicator_t* arc_med = lv_meter_add_arc(power_meter, scale, S(10), lv_palette_main(LV_PALETTE_YELLOW), 0);
     lv_meter_set_indicator_start_value(power_meter, arc_med, 50);
     lv_meter_set_indicator_end_value(power_meter, arc_med, 100);
     
-    lv_meter_indicator_t* arc_high = lv_meter_add_arc(power_meter, scale, 10, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_meter_indicator_t* arc_high = lv_meter_add_arc(power_meter, scale, S(10), lv_palette_main(LV_PALETTE_RED), 0);
     lv_meter_set_indicator_start_value(power_meter, arc_high, 100);
     lv_meter_set_indicator_end_value(power_meter, arc_high, 150);
     
-    power_arc = lv_meter_add_arc(power_meter, scale, 12, lv_color_white(), 0);
+    power_arc = lv_meter_add_arc(power_meter, scale, S(12), lv_color_white(), 0);
     lv_meter_set_indicator_start_value(power_meter, power_arc, 0);
     lv_meter_set_indicator_end_value(power_meter, power_arc, 0);
     
-    power_needle = lv_meter_add_needle_line(power_meter, scale, 4, lv_color_white(), -10);
+    power_needle = lv_meter_add_needle_line(power_meter, scale, S(4), lv_color_white(), S(-10));
     
     power_label = lv_label_create(screens[SCREEN_POWER]);
     lv_label_set_text(power_label, "0");
-    lv_obj_set_style_text_font(power_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(power_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(power_label, lv_color_white(), 0);
-    lv_obj_align(power_label, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_align(power_label, LV_ALIGN_CENTER, 0, S(-10));
 
     lv_obj_t* kw_unit = lv_label_create(screens[SCREEN_POWER]);
     lv_label_set_text(kw_unit, "kW");
-    lv_obj_set_style_text_font(kw_unit, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(kw_unit, UI_FONT_16, 0);
     lv_obj_set_style_text_color(kw_unit, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(kw_unit, LV_ALIGN_CENTER, 0, 22);
+    lv_obj_align(kw_unit, LV_ALIGN_CENTER, 0, S(22));
 
     power_voltage_label = lv_label_create(screens[SCREEN_POWER]);
     lv_obj_add_flag(power_voltage_label, LV_OBJ_FLAG_HIDDEN);
@@ -571,9 +572,9 @@ void UIManager::createTemperatureScreen() {
     // Title
     lv_obj_t* title = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(title, "TEMPERATURE");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_16, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(15));
 
     // ── Three-column layout: MOTOR | INV | BAT ────────────────────────────
     // Vertically centred: header row at y=85, value row at y=101, legend at y=150
@@ -581,74 +582,74 @@ void UIManager::createTemperatureScreen() {
     // MOTOR column label
     lv_obj_t* motor_col_lbl = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(motor_col_lbl, "MOTOR");
-    lv_obj_set_style_text_font(motor_col_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(motor_col_lbl, UI_FONT_12, 0);
     lv_obj_set_style_text_color(motor_col_lbl, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(motor_col_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(motor_col_lbl, 76);
-    lv_obj_align(motor_col_lbl, LV_ALIGN_TOP_LEFT, 4, 85);
+    lv_obj_set_width(motor_col_lbl, S(76));
+    lv_obj_align(motor_col_lbl, LV_ALIGN_TOP_LEFT, S(4), S(85));
 
     temp_motor_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(temp_motor_label, "--\xC2\xB0");
-    lv_obj_set_style_text_font(temp_motor_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(temp_motor_label, UI_FONT_28, 0);
     lv_obj_set_style_text_color(temp_motor_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_set_style_text_align(temp_motor_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(temp_motor_label, 76);
-    lv_obj_align(temp_motor_label, LV_ALIGN_TOP_LEFT, 4, 101);
+    lv_obj_set_width(temp_motor_label, S(76));
+    lv_obj_align(temp_motor_label, LV_ALIGN_TOP_LEFT, S(4), S(101));
 
     // INV column label
     lv_obj_t* inv_col_lbl = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(inv_col_lbl, "INV");
-    lv_obj_set_style_text_font(inv_col_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inv_col_lbl, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inv_col_lbl, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(inv_col_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(inv_col_lbl, 76);
-    lv_obj_align(inv_col_lbl, LV_ALIGN_TOP_MID, 0, 85);
+    lv_obj_set_width(inv_col_lbl, S(76));
+    lv_obj_align(inv_col_lbl, LV_ALIGN_TOP_MID, 0, S(85));
 
     temp_inverter_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(temp_inverter_label, "--\xC2\xB0");
-    lv_obj_set_style_text_font(temp_inverter_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(temp_inverter_label, UI_FONT_28, 0);
     lv_obj_set_style_text_color(temp_inverter_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_set_style_text_align(temp_inverter_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(temp_inverter_label, 76);
-    lv_obj_align(temp_inverter_label, LV_ALIGN_TOP_MID, 0, 101);
+    lv_obj_set_width(temp_inverter_label, S(76));
+    lv_obj_align(temp_inverter_label, LV_ALIGN_TOP_MID, 0, S(101));
 
     // BAT column label
     lv_obj_t* bat_col_lbl = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(bat_col_lbl, "BAT");
-    lv_obj_set_style_text_font(bat_col_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(bat_col_lbl, UI_FONT_12, 0);
     lv_obj_set_style_text_color(bat_col_lbl, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(bat_col_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(bat_col_lbl, 76);
-    lv_obj_align(bat_col_lbl, LV_ALIGN_TOP_RIGHT, -4, 85);
+    lv_obj_set_width(bat_col_lbl, S(76));
+    lv_obj_align(bat_col_lbl, LV_ALIGN_TOP_RIGHT, S(-4), S(85));
 
     temp_battery_label = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(temp_battery_label, "--\xC2\xB0");
-    lv_obj_set_style_text_font(temp_battery_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(temp_battery_label, UI_FONT_28, 0);
     lv_obj_set_style_text_color(temp_battery_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_set_style_text_align(temp_battery_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_width(temp_battery_label, 76);
-    lv_obj_align(temp_battery_label, LV_ALIGN_TOP_RIGHT, -4, 101);
+    lv_obj_set_width(temp_battery_label, S(76));
+    lv_obj_align(temp_battery_label, LV_ALIGN_TOP_RIGHT, S(-4), S(101));
 
     // Divider lines
     lv_obj_t* div1 = lv_obj_create(screens[SCREEN_TEMPERATURE]);
-    lv_obj_set_size(div1, 1, 56);
+    lv_obj_set_size(div1, S(1), S(56));
     lv_obj_set_style_bg_color(div1, lv_palette_darken(LV_PALETTE_GREY, 3), 0);
     lv_obj_set_style_border_width(div1, 0, 0);
-    lv_obj_align(div1, LV_ALIGN_TOP_MID, -38, 83);
+    lv_obj_align(div1, LV_ALIGN_TOP_MID, S(-38), S(83));
 
     lv_obj_t* div2 = lv_obj_create(screens[SCREEN_TEMPERATURE]);
-    lv_obj_set_size(div2, 1, 56);
+    lv_obj_set_size(div2, S(1), S(56));
     lv_obj_set_style_bg_color(div2, lv_palette_darken(LV_PALETTE_GREY, 3), 0);
     lv_obj_set_style_border_width(div2, 0, 0);
-    lv_obj_align(div2, LV_ALIGN_TOP_MID, 38, 83);
+    lv_obj_align(div2, LV_ALIGN_TOP_MID, S(38), S(83));
 
     // Colour legend — raised well above bottom edge
     lv_obj_t* legend = lv_label_create(screens[SCREEN_TEMPERATURE]);
     lv_label_set_text(legend, "Green <60  Yellow <80  Red 80+");
-    lv_obj_set_style_text_font(legend, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(legend, UI_FONT_12, 0);
     lv_obj_set_style_text_color(legend, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(legend, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(legend, LV_ALIGN_BOTTOM_MID, 0, -42);
+    lv_obj_align(legend, LV_ALIGN_BOTTOM_MID, 0, S(-42));
 
     // Null out arc members — replaced by plain labels
     temp_motor_arc = nullptr;
@@ -663,46 +664,46 @@ void UIManager::createBatteryScreen() {
 
     lv_obj_t* title = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(title, "BATTERY");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_16, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(15));
 
     // SOC % — large, centred, colour-coded
     battery_soc_label = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(battery_soc_label, "--");
-    lv_obj_set_style_text_font(battery_soc_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(battery_soc_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(battery_soc_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_align(battery_soc_label, LV_ALIGN_CENTER, 0, -28);
+    lv_obj_align(battery_soc_label, LV_ALIGN_CENTER, 0, S(-28));
 
     lv_obj_t* pct = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(pct, "%");
-    lv_obj_set_style_text_font(pct, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(pct, UI_FONT_20, 0);
     lv_obj_set_style_text_color(pct, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(pct, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_align(pct, LV_ALIGN_CENTER, 0, S(8));
 
     // Voltage — font 20
     battery_voltage_label = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(battery_voltage_label, "---V");
-    lv_obj_set_style_text_font(battery_voltage_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(battery_voltage_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(battery_voltage_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
     lv_obj_set_style_text_align(battery_voltage_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(battery_voltage_label, LV_ALIGN_BOTTOM_MID, 0, -58);
+    lv_obj_align(battery_voltage_label, LV_ALIGN_BOTTOM_MID, 0, S(-58));
 
     // Current — font 20
     battery_current_label = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(battery_current_label, "---A");
-    lv_obj_set_style_text_font(battery_current_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(battery_current_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(battery_current_label, lv_palette_main(LV_PALETTE_CYAN), 0);
     lv_obj_set_style_text_align(battery_current_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(battery_current_label, LV_ALIGN_BOTTOM_MID, 0, -34);
+    lv_obj_align(battery_current_label, LV_ALIGN_BOTTOM_MID, 0, S(-34));
 
     // Temperature — font 20
     battery_temp_label = lv_label_create(screens[SCREEN_BATTERY]);
     lv_label_set_text(battery_temp_label, "--\xC2\xB0""C");
-    lv_obj_set_style_text_font(battery_temp_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(battery_temp_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(battery_temp_label, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(battery_temp_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(battery_temp_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(battery_temp_label, LV_ALIGN_BOTTOM_MID, 0, S(-10));
 
     // Null out meter members — no longer used
     battery_soc_meter = nullptr;
@@ -716,36 +717,36 @@ void UIManager::createBMSScreen() {
 
     lv_obj_t* title = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(title, "BMS STATUS");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_20, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(15));
 
     bms_cell_max_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_cell_max_label, "Max Cell: -.---V");
-    lv_obj_set_style_text_font(bms_cell_max_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(bms_cell_max_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(bms_cell_max_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_align(bms_cell_max_label, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_align(bms_cell_max_label, LV_ALIGN_TOP_MID, 0, S(50));
 
     bms_cell_min_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_cell_min_label, "Min Cell: -.---V");
-    lv_obj_set_style_text_font(bms_cell_min_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(bms_cell_min_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(bms_cell_min_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
-    lv_obj_align(bms_cell_min_label, LV_ALIGN_TOP_MID, 0, 88);
+    lv_obj_align(bms_cell_min_label, LV_ALIGN_TOP_MID, 0, S(88));
 
     bms_cell_delta_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_cell_delta_label, "Delta: ---mV");
-    lv_obj_set_style_text_font(bms_cell_delta_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(bms_cell_delta_label, UI_FONT_16, 0);
     lv_obj_set_style_text_color(bms_cell_delta_label, lv_color_white(), 0);
-    lv_obj_align(bms_cell_delta_label, LV_ALIGN_TOP_MID, 0, 126);
+    lv_obj_align(bms_cell_delta_label, LV_ALIGN_TOP_MID, 0, S(126));
 
     bms_soc_bar = lv_bar_create(screens[SCREEN_BMS]);
     lv_obj_add_flag(bms_soc_bar, LV_OBJ_FLAG_HIDDEN);
 
     bms_temp_max_label = lv_label_create(screens[SCREEN_BMS]);
     lv_label_set_text(bms_temp_max_label, "Max Temp: --\xC2\xB0""C");
-    lv_obj_set_style_text_font(bms_temp_max_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(bms_temp_max_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(bms_temp_max_label, lv_color_white(), 0);
-    lv_obj_align(bms_temp_max_label, LV_ALIGN_TOP_MID, 0, 162);
+    lv_obj_align(bms_temp_max_label, LV_ALIGN_TOP_MID, 0, S(162));
 }
 
 void UIManager::createGearScreen() {
@@ -754,15 +755,15 @@ void UIManager::createGearScreen() {
 
     lv_obj_t* title = lv_label_create(screens[SCREEN_GEAR]);
     lv_label_set_text(title, "GEAR");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_14, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(15));
 
     gear_current_label = lv_label_create(screens[SCREEN_GEAR]);
     lv_label_set_text(gear_current_label, "AUTO");
-    lv_obj_set_style_text_font(gear_current_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(gear_current_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(gear_current_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(gear_current_label, LV_ALIGN_CENTER, 0, -16);
+    lv_obj_align(gear_current_label, LV_ALIGN_CENTER, 0, S(-16));
 
     // ── Horizontal pill row — 4 options evenly spaced ─────────────────────
     // Names match ZombieVerter gear enum: 0=LOW 1=HIGH 2=AUTO 3=HI/LO
@@ -780,28 +781,28 @@ void UIManager::createGearScreen() {
 
         // Pill background
         gear_indicators[i] = lv_obj_create(screens[SCREEN_GEAR]);
-        lv_obj_set_size(gear_indicators[i], pill_w, pill_h);
-        lv_obj_set_style_radius(gear_indicators[i], 11, 0);
+        lv_obj_set_size(gear_indicators[i], S(pill_w), S(pill_h));
+        lv_obj_set_style_radius(gear_indicators[i], S(11), 0);
         lv_obj_set_style_bg_color(gear_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 4), 0);
-        lv_obj_set_style_border_width(gear_indicators[i], 1, 0);
+        lv_obj_set_style_border_width(gear_indicators[i], S(1), 0);
         lv_obj_set_style_border_color(gear_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 2), 0);
-        lv_obj_set_pos(gear_indicators[i], px, 120 + pill_y);
+        lv_obj_set_pos(gear_indicators[i], S(px), S(120 + pill_y));
 
         // Label on the pill
         gear_option_labels[i] = lv_label_create(screens[SCREEN_GEAR]);
         lv_label_set_text(gear_option_labels[i], gearNames[i]);
-        lv_obj_set_style_text_font(gear_option_labels[i], &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(gear_option_labels[i], UI_FONT_12, 0);
         lv_obj_set_style_text_color(gear_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
         lv_obj_set_style_text_align(gear_option_labels[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(gear_option_labels[i], pill_w);
-        lv_obj_set_pos(gear_option_labels[i], px, 120 + pill_y + 5);
+        lv_obj_set_width(gear_option_labels[i], S(pill_w));
+        lv_obj_set_pos(gear_option_labels[i], S(px), S(120 + pill_y + 5));
     }
 
     lv_obj_t* inst = lv_label_create(screens[SCREEN_GEAR]);
     lv_label_set_text(inst, "Click to edit");
-    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
-    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, S(-10));
 }
 
 void UIManager::createMotorScreen() {
@@ -810,15 +811,15 @@ void UIManager::createMotorScreen() {
 
     lv_obj_t* title = lv_label_create(screens[SCREEN_MOTOR]);
     lv_label_set_text(title, "MOTOR");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_14, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(15));
 
     motor_current_label = lv_label_create(screens[SCREEN_MOTOR]);
     lv_label_set_text(motor_current_label, "MG1+MG2");
-    lv_obj_set_style_text_font(motor_current_label, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_font(motor_current_label, UI_FONT_32, 0);
     lv_obj_set_style_text_color(motor_current_label, lv_palette_main(LV_PALETTE_ORANGE), 0);
-    lv_obj_align(motor_current_label, LV_ALIGN_CENTER, 0, -16);
+    lv_obj_align(motor_current_label, LV_ALIGN_CENTER, 0, S(-16));
 
     // ── Horizontal pill row ───────────────────────────────────────────────
     // Order must match VCU MotActive enum: 0=Mg1and2, 1=Mg1, 2=Mg2, 3=BlendingMG2and1
@@ -832,27 +833,27 @@ void UIManager::createMotorScreen() {
         int px = start_x + i * (pill_w + pill_gap);
 
         motor_indicators[i] = lv_obj_create(screens[SCREEN_MOTOR]);
-        lv_obj_set_size(motor_indicators[i], pill_w, pill_h);
-        lv_obj_set_style_radius(motor_indicators[i], 11, 0);
+        lv_obj_set_size(motor_indicators[i], S(pill_w), S(pill_h));
+        lv_obj_set_style_radius(motor_indicators[i], S(11), 0);
         lv_obj_set_style_bg_color(motor_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 4), 0);
-        lv_obj_set_style_border_width(motor_indicators[i], 1, 0);
+        lv_obj_set_style_border_width(motor_indicators[i], S(1), 0);
         lv_obj_set_style_border_color(motor_indicators[i], lv_palette_darken(LV_PALETTE_GREY, 2), 0);
-        lv_obj_set_pos(motor_indicators[i], px, 120 + 40);
+        lv_obj_set_pos(motor_indicators[i], S(px), S(120 + 40));
 
         motor_option_labels[i] = lv_label_create(screens[SCREEN_MOTOR]);
         lv_label_set_text(motor_option_labels[i], motorNames[i]);
-        lv_obj_set_style_text_font(motor_option_labels[i], &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(motor_option_labels[i], UI_FONT_12, 0);
         lv_obj_set_style_text_color(motor_option_labels[i], lv_palette_darken(LV_PALETTE_GREY, 1), 0);
         lv_obj_set_style_text_align(motor_option_labels[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(motor_option_labels[i], pill_w);
-        lv_obj_set_pos(motor_option_labels[i], px, 120 + 40 + 5);
+        lv_obj_set_width(motor_option_labels[i], S(pill_w));
+        lv_obj_set_pos(motor_option_labels[i], S(px), S(120 + 40 + 5));
     }
 
     lv_obj_t* inst = lv_label_create(screens[SCREEN_MOTOR]);
     lv_label_set_text(inst, "Click to edit");
-    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
-    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, S(-10));
 }
 
 void UIManager::createRegenScreen() {
@@ -861,19 +862,19 @@ void UIManager::createRegenScreen() {
     
     regen_title_label = lv_label_create(screens[SCREEN_REGEN]);
     lv_label_set_text(regen_title_label, "REGEN MAX");
-    lv_obj_set_style_text_font(regen_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(regen_title_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(regen_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(regen_title_label, LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_align(regen_title_label, LV_ALIGN_TOP_MID, 0, S(5));
     
     regen_arc = lv_arc_create(screens[SCREEN_REGEN]);
-    lv_obj_set_size(regen_arc, 180, 180);
+    lv_obj_set_size(regen_arc, S(180), S(180));
     lv_obj_center(regen_arc);
     lv_arc_set_rotation(regen_arc, 135);
     lv_arc_set_bg_angles(regen_arc, 0, 270);
     lv_arc_set_value(regen_arc, 0);
     lv_arc_set_range(regen_arc, -35, 0);
-    lv_obj_set_style_arc_width(regen_arc, 12, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(regen_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(regen_arc, S(12), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(regen_arc, S(12), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(regen_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
     lv_obj_set_style_arc_color(regen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
     lv_obj_remove_style(regen_arc, NULL, LV_PART_KNOB);
@@ -881,16 +882,16 @@ void UIManager::createRegenScreen() {
     
     regen_value_label = lv_label_create(screens[SCREEN_REGEN]);
     lv_label_set_text(regen_value_label, "0%");
-    lv_obj_set_style_text_font(regen_value_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(regen_value_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(regen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_align(regen_value_label, LV_ALIGN_CENTER, 0, 0);
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_REGEN]);
     lv_label_set_text(inst, "Click to edit");
-    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, S(-15));
 }
 
 void UIManager::createThrotMaxScreen() {
@@ -899,19 +900,19 @@ void UIManager::createThrotMaxScreen() {
 
     throtmax_title_label = lv_label_create(screens[SCREEN_THROTMAX]);
     lv_label_set_text(throtmax_title_label, "THROTTLE MAX");
-    lv_obj_set_style_text_font(throtmax_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(throtmax_title_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(throtmax_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(throtmax_title_label, LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_align(throtmax_title_label, LV_ALIGN_TOP_MID, 0, S(5));
 
     throtmax_arc = lv_arc_create(screens[SCREEN_THROTMAX]);
-    lv_obj_set_size(throtmax_arc, 180, 180);
+    lv_obj_set_size(throtmax_arc, S(180), S(180));
     lv_obj_center(throtmax_arc);
     lv_arc_set_rotation(throtmax_arc, 135);
     lv_arc_set_bg_angles(throtmax_arc, 0, 270);
     lv_arc_set_value(throtmax_arc, 100);
     lv_arc_set_range(throtmax_arc, 0, 100);
-    lv_obj_set_style_arc_width(throtmax_arc, 12, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(throtmax_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(throtmax_arc, S(12), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(throtmax_arc, S(12), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(throtmax_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
     lv_obj_set_style_arc_color(throtmax_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
     lv_obj_remove_style(throtmax_arc, NULL, LV_PART_KNOB);
@@ -919,16 +920,16 @@ void UIManager::createThrotMaxScreen() {
 
     throtmax_value_label = lv_label_create(screens[SCREEN_THROTMAX]);
     lv_label_set_text(throtmax_value_label, "100%");
-    lv_obj_set_style_text_font(throtmax_value_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(throtmax_value_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(throtmax_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_align(throtmax_value_label, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t* inst = lv_label_create(screens[SCREEN_THROTMAX]);
     lv_label_set_text(inst, "Click to edit");
-    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_align(inst, LV_ALIGN_BOTTOM_MID, 0, S(-15));
 }
 
 void UIManager::createBrakeRegenScreen() {
@@ -937,19 +938,19 @@ void UIManager::createBrakeRegenScreen() {
 
     brakeregen_title_label = lv_label_create(screens[SCREEN_BRAKEREGEN]);
     lv_label_set_text(brakeregen_title_label, "BRAKE REGEN");
-    lv_obj_set_style_text_font(brakeregen_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(brakeregen_title_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(brakeregen_title_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(brakeregen_title_label, LV_ALIGN_TOP_MID, 0, 5);
+    lv_obj_align(brakeregen_title_label, LV_ALIGN_TOP_MID, 0, S(5));
 
     brakeregen_arc = lv_arc_create(screens[SCREEN_BRAKEREGEN]);
-    lv_obj_set_size(brakeregen_arc, 180, 180);
+    lv_obj_set_size(brakeregen_arc, S(180), S(180));
     lv_obj_center(brakeregen_arc);
     lv_arc_set_rotation(brakeregen_arc, 135);
     lv_arc_set_bg_angles(brakeregen_arc, 0, 270);
     lv_arc_set_value(brakeregen_arc, 0);
     lv_arc_set_range(brakeregen_arc, -35, 0);
-    lv_obj_set_style_arc_width(brakeregen_arc, 12, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(brakeregen_arc, 12, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(brakeregen_arc, S(12), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(brakeregen_arc, S(12), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_darken(LV_PALETTE_GREY, 3), LV_PART_MAIN);
     lv_obj_set_style_arc_color(brakeregen_arc, lv_palette_main(LV_PALETTE_GREEN), LV_PART_INDICATOR);
     lv_obj_remove_style(brakeregen_arc, NULL, LV_PART_KNOB);
@@ -957,16 +958,16 @@ void UIManager::createBrakeRegenScreen() {
 
     brakeregen_value_label = lv_label_create(screens[SCREEN_BRAKEREGEN]);
     lv_label_set_text(brakeregen_value_label, "0%");
-    lv_obj_set_style_text_font(brakeregen_value_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(brakeregen_value_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(brakeregen_value_label, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_obj_align(brakeregen_value_label, LV_ALIGN_CENTER, 0, 0);
 
     lv_obj_t* inst2 = lv_label_create(screens[SCREEN_BRAKEREGEN]);
     lv_label_set_text(inst2, "Click to edit");
-    lv_obj_set_style_text_font(inst2, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst2, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst2, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(inst2, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(inst2, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_align(inst2, LV_ALIGN_BOTTOM_MID, 0, S(-15));
 }
 
 void UIManager::createWiFiScreen() {
@@ -975,45 +976,53 @@ void UIManager::createWiFiScreen() {
     
     lv_obj_t* title = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(title, "WiFi CONFIG");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_14, 0);
     lv_obj_set_style_text_color(title, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(8));
     
     wifi_status_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_status_label, "Status: Inactive");
-    lv_obj_set_style_text_font(wifi_status_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(wifi_status_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(wifi_status_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(wifi_status_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_status_label, LV_ALIGN_TOP_MID, 0, 32);
+    lv_obj_align(wifi_status_label, LV_ALIGN_TOP_MID, 0, S(32));
     
     wifi_ssid_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_ssid_label, "SSID:\nZombieVerter-Display");
-    lv_obj_set_style_text_font(wifi_ssid_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(wifi_ssid_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(wifi_ssid_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(wifi_ssid_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_ssid_label, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_align(wifi_ssid_label, LV_ALIGN_CENTER, 0, S(-30));
     
     wifi_password_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_password_label, "PW: zombieverter");
-    lv_obj_set_style_text_font(wifi_password_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(wifi_password_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(wifi_password_label, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_style_text_align(wifi_password_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_password_label, LV_ALIGN_CENTER, 0, 5);
+    lv_obj_align(wifi_password_label, LV_ALIGN_CENTER, 0, S(5));
     
     wifi_ip_label = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(wifi_ip_label, "IP: 192.168.4.1");
-    lv_obj_set_style_text_font(wifi_ip_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(wifi_ip_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(wifi_ip_label, lv_palette_main(LV_PALETTE_CYAN), 0);
     lv_obj_set_style_text_align(wifi_ip_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, 35);
+    lv_obj_align(wifi_ip_label, LV_ALIGN_CENTER, 0, S(35));
     
     lv_obj_t* inst = lv_label_create(screens[SCREEN_WIFI]);
     lv_label_set_text(inst, "Tap screen to toggle WiFi");
-    lv_obj_set_style_text_font(inst, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(inst, UI_FONT_12, 0);
     lv_obj_set_style_text_color(inst, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(inst, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(inst, LV_ALIGN_CENTER, 0, 65);
+    lv_obj_align(inst, LV_ALIGN_CENTER, 0, S(65));
 }
+
+#if !HAS_RFID
+// Settings menu indices match the switch in main.cpp onTouchTap().
+// 1 = Program RFID Fob, 3 = Clear RFID Fobs — hidden without a reader.
+static bool settingsItemAvailable(int i) {
+    return i != 1 && i != 3;
+}
+#endif
 
 void UIManager::createSettingsScreen() {
     screens[SCREEN_SETTINGS] = lv_obj_create(NULL);
@@ -1022,16 +1031,16 @@ void UIManager::createSettingsScreen() {
     // Title
     lv_obj_t* title = lv_label_create(screens[SCREEN_SETTINGS]);
     lv_label_set_text(title, "SETTINGS");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, UI_FONT_16, 0);
     lv_obj_set_style_text_color(title, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, S(18));
 
     // Instruction hint — lighter colour, above bottom edge
     lv_obj_t* hint = lv_label_create(screens[SCREEN_SETTINGS]);
     lv_label_set_text(hint, "Press screen to select");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(hint, UI_FONT_12, 0);
     lv_obj_set_style_text_color(hint, lv_palette_lighten(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -14);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, S(-14));
 
     // ── 6 menu items: 26px each, start y=42, total=156px ─────────────────
     const char* menuLabels[SETTINGS_MENU_COUNT] = {
@@ -1046,25 +1055,41 @@ void UIManager::createSettingsScreen() {
     const int MENU_START_Y = 42;
     const int MENU_ITEM_H  = 26;
 
+#if !HAS_RFID
+    int row = 0;   // visible row — RFID items are skipped on boards without a reader
+#endif
     for (int i = 0; i < SETTINGS_MENU_COUNT; i++) {
+#if !HAS_RFID
+        if (!settingsItemAvailable(i)) {
+            // Still created (hidden) so every index has valid objects
+            settings_menu_indicators[i] = lv_obj_create(screens[SCREEN_SETTINGS]);
+            lv_obj_add_flag(settings_menu_indicators[i], LV_OBJ_FLAG_HIDDEN);
+            settings_menu_labels[i] = lv_label_create(screens[SCREEN_SETTINGS]);
+            lv_obj_add_flag(settings_menu_labels[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        const int slot = row++;
+#else
+        const int slot = i;
+#endif
         // Highlight bar
         settings_menu_indicators[i] = lv_obj_create(screens[SCREEN_SETTINGS]);
-        lv_obj_set_size(settings_menu_indicators[i], 210, MENU_ITEM_H - 2);
+        lv_obj_set_size(settings_menu_indicators[i], S(210), S(MENU_ITEM_H - 2));
         lv_obj_set_style_bg_color(settings_menu_indicators[i],
                                    lv_palette_darken(LV_PALETTE_CYAN, 3), 0);
         lv_obj_set_style_border_width(settings_menu_indicators[i], 0, 0);
-        lv_obj_set_style_radius(settings_menu_indicators[i], 4, 0);
+        lv_obj_set_style_radius(settings_menu_indicators[i], S(4), 0);
         lv_obj_align(settings_menu_indicators[i], LV_ALIGN_TOP_MID, 0,
-                     MENU_START_Y + i * MENU_ITEM_H);
+                     S(MENU_START_Y + slot * MENU_ITEM_H));
         lv_obj_add_flag(settings_menu_indicators[i], LV_OBJ_FLAG_HIDDEN);
 
         // Label
         settings_menu_labels[i] = lv_label_create(screens[SCREEN_SETTINGS]);
         lv_label_set_text(settings_menu_labels[i], menuLabels[i]);
-        lv_obj_set_style_text_font(settings_menu_labels[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(settings_menu_labels[i], UI_FONT_14, 0);
         lv_obj_set_style_text_color(settings_menu_labels[i], lv_color_white(), 0);
         lv_obj_align(settings_menu_labels[i], LV_ALIGN_TOP_MID, 0,
-                     MENU_START_Y + i * MENU_ITEM_H + 8);
+                     S(MENU_START_Y + slot * MENU_ITEM_H + 8));
     }
 
     // Highlight first item
@@ -1095,6 +1120,14 @@ void UIManager::scrollSettingsMenu(int delta) {
     settings_selected_item += delta;
     if (settings_selected_item < 0) settings_selected_item = SETTINGS_MENU_COUNT - 1;
     if (settings_selected_item >= SETTINGS_MENU_COUNT) settings_selected_item = 0;
+#if !HAS_RFID
+    // Step past items hidden on this board, in the direction of travel
+    while (!settingsItemAvailable(settings_selected_item)) {
+        settings_selected_item += (delta < 0) ? -1 : 1;
+        if (settings_selected_item < 0) settings_selected_item = SETTINGS_MENU_COUNT - 1;
+        if (settings_selected_item >= SETTINGS_MENU_COUNT) settings_selected_item = 0;
+    }
+#endif
 
     // Highlight new
     lv_obj_clear_flag(settings_menu_indicators[settings_selected_item], LV_OBJ_FLAG_HIDDEN);
@@ -1472,13 +1505,13 @@ void UIManager::showSystemInfo() {
     if (warningLabel) { lv_obj_del(warningLabel); warningLabel = nullptr; }
 
     warningLabel = lv_obj_create(activeScreen);
-    lv_obj_set_size(warningLabel, 210, 130);
+    lv_obj_set_size(warningLabel, S(210), S(130));
     lv_obj_center(warningLabel);
     lv_obj_set_style_bg_color(warningLabel, lv_color_make(20, 20, 20), 0);
     lv_obj_set_style_bg_opa(warningLabel, LV_OPA_90, 0);
     lv_obj_set_style_border_color(warningLabel, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_set_style_border_width(warningLabel, 2, 0);
-    lv_obj_set_style_radius(warningLabel, 10, 0);
+    lv_obj_set_style_border_width(warningLabel, S(2), 0);
+    lv_obj_set_style_radius(warningLabel, S(10), 0);
 
     lv_obj_t* text = lv_label_create(warningLabel);
     lv_label_set_text_fmt(text,
@@ -1488,11 +1521,11 @@ void UIManager::showSystemInfo() {
         "Dial: %s\n"
         "UI:   %s",
         canStr, vcuStr, dialFWVersion, uiFWVersion);
-    lv_obj_set_style_text_font(text, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(text, UI_FONT_12, 0);
     lv_obj_set_style_text_color(text, lv_color_white(), 0);
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(text, 190);
+    lv_obj_set_width(text, S(190));
     lv_obj_center(text);
 
     warningExpiry = millis() + 4000;   // show for 4 seconds
@@ -1529,22 +1562,22 @@ void UIManager::showWarning(const char* msg) {
 
     // Create a container with semi-transparent red background
     warningLabel = lv_obj_create(activeScreen);
-    lv_obj_set_size(warningLabel, 200, 80);
+    lv_obj_set_size(warningLabel, S(200), S(80));
     lv_obj_center(warningLabel);
     lv_obj_set_style_bg_color(warningLabel, lv_color_make(180, 0, 0), 0);
     lv_obj_set_style_bg_opa(warningLabel, LV_OPA_90, 0);
     lv_obj_set_style_border_color(warningLabel, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_obj_set_style_border_width(warningLabel, 2, 0);
-    lv_obj_set_style_radius(warningLabel, 10, 0);
+    lv_obj_set_style_border_width(warningLabel, S(2), 0);
+    lv_obj_set_style_radius(warningLabel, S(10), 0);
 
     // Warning icon + text
     lv_obj_t* text = lv_label_create(warningLabel);
     lv_label_set_text_fmt(text, "⚠ %s", msg);
-    lv_obj_set_style_text_font(text, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(text, UI_FONT_14, 0);
     lv_obj_set_style_text_color(text, lv_color_white(), 0);
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(text, 180);
+    lv_obj_set_width(text, S(180));
     lv_obj_center(text);
 
     warningExpiry = millis() + 2000;  // auto-hide after 2 seconds
@@ -1562,21 +1595,21 @@ void UIManager::showSuccess(const char* msg) {
     }
 
     warningLabel = lv_obj_create(activeScreen);
-    lv_obj_set_size(warningLabel, 200, 80);
+    lv_obj_set_size(warningLabel, S(200), S(80));
     lv_obj_center(warningLabel);
     lv_obj_set_style_bg_color(warningLabel, lv_color_make(0, 140, 0), 0);
     lv_obj_set_style_bg_opa(warningLabel, LV_OPA_90, 0);
     lv_obj_set_style_border_color(warningLabel, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_set_style_border_width(warningLabel, 2, 0);
-    lv_obj_set_style_radius(warningLabel, 10, 0);
+    lv_obj_set_style_border_width(warningLabel, S(2), 0);
+    lv_obj_set_style_radius(warningLabel, S(10), 0);
 
     lv_obj_t* text = lv_label_create(warningLabel);
     lv_label_set_text_fmt(text, LV_SYMBOL_OK "  %s", msg);
-    lv_obj_set_style_text_font(text, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(text, UI_FONT_14, 0);
     lv_obj_set_style_text_color(text, lv_color_white(), 0);
     lv_obj_set_style_text_align(text, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(text, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(text, 180);
+    lv_obj_set_width(text, S(180));
     lv_obj_center(text);
 
     warningExpiry = millis() + 2000;
@@ -1594,62 +1627,62 @@ void UIManager::createLockScreen() {
 
     // ── Padlock icon body ─────────────────────────────────────────────────
     lock_icon = lv_obj_create(screens[SCREEN_LOCK]);
-    lv_obj_set_size(lock_icon, 36, 28);
+    lv_obj_set_size(lock_icon, S(36), S(28));
     lv_obj_set_style_bg_color(lock_icon, lv_palette_main(LV_PALETTE_RED), 0);
     lv_obj_set_style_border_width(lock_icon, 0, 0);
-    lv_obj_set_style_radius(lock_icon, 4, 0);
-    lv_obj_align(lock_icon, LV_ALIGN_CENTER, 0, -55);
+    lv_obj_set_style_radius(lock_icon, S(4), 0);
+    lv_obj_align(lock_icon, LV_ALIGN_CENTER, 0, S(-55));
 
     // Shackle arc
     lv_obj_t* shackle = lv_arc_create(screens[SCREEN_LOCK]);
-    lv_obj_set_size(shackle, 30, 30);
+    lv_obj_set_size(shackle, S(30), S(30));
     lv_arc_set_rotation(shackle, 0);
     lv_arc_set_bg_angles(shackle, 0, 360);
     lv_arc_set_angles(shackle, 180, 360);
     lv_obj_set_style_arc_color(shackle, lv_palette_main(LV_PALETTE_RED), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(shackle, lv_color_black(), LV_PART_MAIN);
-    lv_obj_set_style_arc_width(shackle, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(shackle, S(4), LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(shackle, 0, LV_PART_MAIN);
     lv_obj_remove_style(shackle, NULL, LV_PART_KNOB);
     lv_obj_clear_flag(shackle, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(shackle, LV_ALIGN_CENTER, 0, -72);
+    lv_obj_align(shackle, LV_ALIGN_CENTER, 0, S(-72));
 
     // Title — shown in both padlock and PIN pad views
     lock_title_label = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_title_label, "VEHICLE LOCKED");
-    lv_obj_set_style_text_font(lock_title_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(lock_title_label, UI_FONT_20, 0);
     lv_obj_set_style_text_color(lock_title_label, lv_palette_main(LV_PALETTE_RED), 0);
-    lv_obj_align(lock_title_label, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_align(lock_title_label, LV_ALIGN_CENTER, 0, S(-10));
 
     // Status label — padlock view: "Tap to enter PIN" / "Long-press to lock"
     lock_status_label = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_status_label, "Tap screen to enter PIN");
-    lv_obj_set_style_text_font(lock_status_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(lock_status_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(lock_status_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    lv_obj_align(lock_status_label, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_align(lock_status_label, LV_ALIGN_CENTER, 0, S(30));
 
     // PIN digit dots — hidden in padlock view, shown in PIN pad view
     lock_pin_display = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_pin_display, "_ _ _ _");
-    lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_font(lock_pin_display, UI_FONT_32, 0);
     lv_obj_set_style_text_color(lock_pin_display, lv_color_white(), 0);
-    lv_obj_align(lock_pin_display, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_align(lock_pin_display, LV_ALIGN_CENTER, 0, S(10));
     lv_obj_add_flag(lock_pin_display, LV_OBJ_FLAG_HIDDEN);
 
     lock_digit_label = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_digit_label, "0");
-    lv_obj_set_style_text_font(lock_digit_label, &lv_font_montserrat_40, 0);
+    lv_obj_set_style_text_font(lock_digit_label, UI_FONT_40, 0);
     lv_obj_set_style_text_color(lock_digit_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(lock_digit_label, LV_ALIGN_CENTER, 0, 52);
+    lv_obj_align(lock_digit_label, LV_ALIGN_CENTER, 0, S(52));
     lv_obj_add_flag(lock_digit_label, LV_OBJ_FLAG_HIDDEN);
 
     // Instruction bar — bottom of screen
     lock_instruction_label = lv_label_create(screens[SCREEN_LOCK]);
     lv_label_set_text(lock_instruction_label, "Long-press to lock");
-    lv_obj_set_style_text_font(lock_instruction_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lock_instruction_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(lock_instruction_label, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_style_text_align(lock_instruction_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lock_instruction_label, LV_ALIGN_BOTTOM_MID, 0, -52);
+    lv_obj_align(lock_instruction_label, LV_ALIGN_BOTTOM_MID, 0, S(-52));
 }
 
 // Show the PIN pad — called when user taps the lock screen
@@ -1684,7 +1717,7 @@ void UIManager::updateLockScreen() {
         lv_obj_add_flag(lock_status_label,  LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(lock_pin_display, "BRING PHONE\nCLOSE");
         lv_obj_set_style_text_color(lock_pin_display, lv_palette_main(LV_PALETTE_CYAN), 0);
-        lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(lock_pin_display, UI_FONT_16, 0);
         lv_label_set_text(lock_instruction_label, "Dbl-click to cancel  (30s timeout)");
         return;
     }
@@ -1700,7 +1733,7 @@ void UIManager::updateLockScreen() {
         lv_obj_add_flag(lock_status_label,  LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(lock_pin_display, "TAP NEW FOB");
         lv_obj_set_style_text_color(lock_pin_display, lv_palette_main(LV_PALETTE_YELLOW), 0);
-        lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(lock_pin_display, UI_FONT_16, 0);
         lv_label_set_text(lock_instruction_label, "Dbl-click to cancel");
         return;
     }
@@ -1714,7 +1747,7 @@ void UIManager::updateLockScreen() {
         lv_obj_clear_flag(lock_pin_display, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(lock_digit_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(lock_status_label,  LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_32, 0);
+        lv_obj_set_style_text_font(lock_pin_display, UI_FONT_32, 0);
         lv_obj_set_style_text_color(lock_pin_display, lv_color_white(), 0);
         uint8_t pinPos = immobilizer->getPINPosition();
         char pinDisplay[16];
@@ -1724,7 +1757,7 @@ void UIManager::updateLockScreen() {
         }
         pinDisplay[7] = '\0';
         lv_label_set_text(lock_pin_display, pinDisplay);
-        lv_obj_set_style_text_font(lock_digit_label, &lv_font_montserrat_40, 0);
+        lv_obj_set_style_text_font(lock_digit_label, UI_FONT_40, 0);
         lv_obj_set_style_text_color(lock_digit_label, lv_palette_main(LV_PALETTE_CYAN), 0);
         lv_label_set_text_fmt(lock_digit_label, "%d", immobilizer->getCurrentDigit());
         lv_label_set_text(lock_instruction_label, "Rotate: Select\nClick: Enter");
@@ -1742,9 +1775,9 @@ void UIManager::updateLockScreen() {
             lv_obj_add_flag(lock_status_label,     LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(lock_pin_display,    LV_OBJ_FLAG_HIDDEN);
             lv_obj_clear_flag(lock_digit_label,    LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_style_text_font(lock_pin_display, &lv_font_montserrat_32, 0);
+            lv_obj_set_style_text_font(lock_pin_display, UI_FONT_32, 0);
             lv_obj_set_style_text_color(lock_pin_display, lv_color_white(), 0);
-            lv_obj_set_style_text_font(lock_digit_label, &lv_font_montserrat_40, 0);
+            lv_obj_set_style_text_font(lock_digit_label, UI_FONT_40, 0);
             lv_obj_set_style_text_color(lock_digit_label, lv_palette_main(LV_PALETTE_CYAN), 0);
             uint8_t pinPos = immobilizer->getPINPosition();
             char pinDisplay[16];
@@ -1793,21 +1826,21 @@ void UIManager::createChargingScreen() {
     // Title
     chg_title_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_title_label, LV_SYMBOL_CHARGE " CHARGING");
-    lv_obj_set_style_text_font(chg_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(chg_title_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(chg_title_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(chg_title_label, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(chg_title_label, LV_ALIGN_TOP_MID, 0, S(8));
 
     // SOC arc meter (270 degree sweep)
     chg_soc_arc = lv_meter_create(screens[SCREEN_CHARGING]);
-    lv_obj_set_size(chg_soc_arc, 140, 140);
-    lv_obj_align(chg_soc_arc, LV_ALIGN_CENTER, 0, 8);
+    lv_obj_set_size(chg_soc_arc, S(140), S(140));
+    lv_obj_align(chg_soc_arc, LV_ALIGN_CENTER, 0, S(8));
     lv_obj_set_style_bg_color(chg_soc_arc, lv_color_black(), 0);
     lv_obj_set_style_border_width(chg_soc_arc, 0, 0);
 
     lv_meter_scale_t* scale = lv_meter_add_scale(chg_soc_arc);
     lv_meter_set_scale_range(chg_soc_arc, scale, 0, 100, 270, 135);
     lv_meter_set_scale_ticks(chg_soc_arc, scale, 0, 0, 0, lv_color_black());
-    chg_soc_indicator = lv_meter_add_arc(chg_soc_arc, scale, 8,
+    chg_soc_indicator = lv_meter_add_arc(chg_soc_arc, scale, S(8),
                                           lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_meter_set_indicator_start_value(chg_soc_arc, chg_soc_indicator, 0);
     lv_meter_set_indicator_end_value(chg_soc_arc, chg_soc_indicator, 0);
@@ -1815,37 +1848,37 @@ void UIManager::createChargingScreen() {
     // SOC % label centred in arc
     chg_soc_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_soc_label, "-%");
-    lv_obj_set_style_text_font(chg_soc_label, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_font(chg_soc_label, UI_FONT_28, 0);
     lv_obj_set_style_text_color(chg_soc_label, lv_color_white(), 0);
     lv_obj_align(chg_soc_label, LV_ALIGN_CENTER, 0, 0);
 
     // Charge current
     chg_current_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_current_label, "- A");
-    lv_obj_set_style_text_font(chg_current_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(chg_current_label, UI_FONT_16, 0);
     lv_obj_set_style_text_color(chg_current_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(chg_current_label, LV_ALIGN_CENTER, 0, 50);
+    lv_obj_align(chg_current_label, LV_ALIGN_CENTER, 0, S(50));
 
     // Pack voltage
     chg_voltage_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_voltage_label, "- V");
-    lv_obj_set_style_text_font(chg_voltage_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(chg_voltage_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(chg_voltage_label, lv_palette_main(LV_PALETTE_YELLOW), 0);
-    lv_obj_align(chg_voltage_label, LV_ALIGN_CENTER, 0, 68);
+    lv_obj_align(chg_voltage_label, LV_ALIGN_CENTER, 0, S(68));
 
     // ETA
     chg_eta_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_eta_label, "ETA: --");
-    lv_obj_set_style_text_font(chg_eta_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(chg_eta_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(chg_eta_label, lv_palette_main(LV_PALETTE_GREY), 0);
-    lv_obj_align(chg_eta_label, LV_ALIGN_BOTTOM_MID, 0, -24);
+    lv_obj_align(chg_eta_label, LV_ALIGN_BOTTOM_MID, 0, S(-24));
 
     // Energy added this session
     chg_energy_label = lv_label_create(screens[SCREEN_CHARGING]);
     lv_label_set_text(chg_energy_label, "+0.0 Wh");
-    lv_obj_set_style_text_font(chg_energy_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(chg_energy_label, UI_FONT_12, 0);
     lv_obj_set_style_text_color(chg_energy_label, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_align(chg_energy_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_align(chg_energy_label, LV_ALIGN_BOTTOM_MID, 0, S(-8));
 
     // Init history state
     memset(chg_voltageHistory, 0, sizeof(chg_voltageHistory));
@@ -1920,27 +1953,27 @@ void UIManager::createHealthCheckScreen() {
     // Title
     health_title_label = lv_label_create(screens[SCREEN_HEALTH_CHECK]);
     lv_label_set_text(health_title_label, "PRE-DRIVE CHECK");
-    lv_obj_set_style_text_font(health_title_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(health_title_label, UI_FONT_14, 0);
     lv_obj_set_style_text_color(health_title_label, lv_palette_main(LV_PALETTE_CYAN), 0);
-    lv_obj_align(health_title_label, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_align(health_title_label, LV_ALIGN_TOP_MID, 0, S(28));
 
     // Overall status (CHECKING... / ALL OK / CHECK SYSTEM)
     health_status_label = lv_label_create(screens[SCREEN_HEALTH_CHECK]);
     lv_label_set_text(health_status_label, "Checking...");
-    lv_obj_set_style_text_font(health_status_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(health_status_label, UI_FONT_16, 0);
     lv_obj_set_style_text_color(health_status_label, lv_color_white(), 0);
-    lv_obj_align(health_status_label, LV_ALIGN_TOP_MID, 0, 50);
+    lv_obj_align(health_status_label, LV_ALIGN_TOP_MID, 0, S(50));
 
     // Individual item rows — centred, 18px spacing, starting below status label
     health_item_count = 0;
     for (int i = 0; i < 8; i++) {
         health_item_labels[i] = lv_label_create(screens[SCREEN_HEALTH_CHECK]);
         lv_label_set_text(health_item_labels[i], "");
-        lv_obj_set_style_text_font(health_item_labels[i], &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(health_item_labels[i], UI_FONT_12, 0);
         lv_obj_set_style_text_color(health_item_labels[i], lv_color_white(), 0);
         lv_obj_set_style_text_align(health_item_labels[i], LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_width(health_item_labels[i], 200);
-        lv_obj_align(health_item_labels[i], LV_ALIGN_TOP_MID, 0, 72 + i * 18);
+        lv_obj_set_width(health_item_labels[i], S(200));
+        lv_obj_align(health_item_labels[i], LV_ALIGN_TOP_MID, 0, S(72 + i * 18));
     }
 }
 

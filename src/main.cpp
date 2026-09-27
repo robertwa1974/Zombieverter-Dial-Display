@@ -16,6 +16,7 @@
 #include "Immobilizer.h"
 #include "SDOManager.h"
 #include <esp_task_wdt.h>
+#include "UIScale.h"   // keep last — defines S()
 
 // ── Firmware version strings — update on each release ────────────────────────
 #define DIAL_FW_VERSION   "v2.6.0"   // M5Dial firmware version
@@ -406,16 +407,16 @@ void onTouchTap(uint16_t x, uint16_t y) {
     }
 
     if (currentScreen == SCREEN_GEAR) {
-        if (y >= 170 && y <= 236) {
-            int option = (y - 170) / 22;
+        if (y >= S(170) && y <= S(236)) {
+            int option = (y - S(170)) / S(22);
             if (option >= 0 && option <= 3)
                 canManager.setParameter(27, option);
         }
     }
 
     if (currentScreen == SCREEN_MOTOR) {
-        if (y >= 170 && y <= 236) {
-            int option = (y - 170) / 22;
+        if (y >= S(170) && y <= S(236)) {
+            int option = (y - S(170)) / S(22);
             if (option >= 0 && option <= 3)
                 canManager.setParameter(129, option);
         }
@@ -476,7 +477,7 @@ void setup() {
     #if DEBUG_SERIAL
     Serial.begin(115200);
     vTaskDelay(pdMS_TO_TICKS(1000));
-    Serial.println("ZombieVerter Display - M5Stack Dial");
+    Serial.println("ZombieVerter Display - " BOARD_NAME);
     Serial.println("=============================================");
     #endif
 
