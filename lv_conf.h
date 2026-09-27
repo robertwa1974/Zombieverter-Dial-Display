@@ -78,7 +78,11 @@
 
 /* Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  * (Not so important, you can adjust it to modify default sizes and spaces) */
+#if defined(BOARD_MATOUCH21)
+#define LV_DPI_DEF 260     /*[px/inch] 2x UI scale: theme paddings scale with it*/
+#else
 #define LV_DPI_DEF 130     /*[px/inch]*/
+#endif
 
 /*=================
  * RENDERING CONFIG

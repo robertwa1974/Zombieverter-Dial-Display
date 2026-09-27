@@ -28,6 +28,24 @@ pio run -e m5stack-dial --target uploadfs
 
 **platformio.ini critical flags:** No `-DBOARD_HAS_PSRAM`, no `qio_opi` — device has no PSRAM.
 
+### Second target: MaTouch 2.1 (`matouch21-port` branch) — HARDWARE-UNTESTED
+
+Makerfabs MaTouch ESP32-S3 Rotary 2.1" (ST7701S 480×480, 16MB flash, 8MB OPI PSRAM).
+Builds clean but has **not yet been run on hardware** (display, CST826 touch, CAN on 43/44 all unverified).
+
+```bash
+pio run -e matouch21                   # build
+pio run -e matouch21 --target upload   # flash
+pio run -e matouch21 --target uploadfs # web UI (partitions_16MB.csv)
+```
+
+- Board selected by `-DBOARD_MATOUCH21`; no flag = `BOARD_M5DIAL` (see `include/BoardConfig.h`).
+  The Dial-only PSRAM rule above does not apply to `matouch21`, which needs `qio_opi` + `-DBOARD_HAS_PSRAM`.
+- Board code lives in `src/board/` (`Hardware_M5Dial.cpp`, `Hardware_MaTouch21.cpp`, `CST826.*`).
+- UI is authored at 240×240: wrap pixel values in `S()` and use `UI_FONT_nn` (`include/UIScale.h`).
+- `HAS_RFID=0` on MaTouch: RFID compiled out, fob menu items hidden, PIN + BLE unlock only.
+- CAN is TWAI TX 43 / RX 44 (UART connector); GPIO 1/2/21/46 are LCD pins on this board.
+
 ## Release Process
 
 ```bash
@@ -95,6 +113,7 @@ that were removed in v2.5.2.
 - **`[IMMOBILIZER] DriveInhibited read failed`** — SDO abort `0x06020000` on param 2124. Normal on VCU configs without that spot value. Non-fatal.
 - **Coordinated CAN ID shift** — SimpBMS 0x355/0x356/0x373 → 0x455/0x456/0x473 (two lines in CANData.cpp + simultaneous M5DialBMS update)
 - **Thunderstruck BMS support** — 29-bit extended CAN IDs for a friend's Ford Capri conversion; awaiting CAN monitor snapshot
+- **`Hardware::sleep()`/`wake()` brightness bug (fix on main)** — `sleep()` calls `setBacklight(0)`, which overwrites `currentBrightness`, so `wake()` restores 0 and the screen stays dark. Latent: nothing calls sleep/wake today. Fix: write the backlight directly in `sleep()` without touching `currentBrightness`. Present in both board files.
 
 ## Version History Summary
 
