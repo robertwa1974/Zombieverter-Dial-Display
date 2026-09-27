@@ -46,6 +46,29 @@ pio run -e matouch21 --target uploadfs # web UI (partitions_16MB.csv)
 - `HAS_RFID=0` on MaTouch: RFID compiled out, fob menu items hidden, PIN + BLE unlock only.
 - CAN is TWAI TX 43 / RX 44 (UART connector); GPIO 1/2/21/46 are LCD pins on this board.
 
+### Bring-up checklist (MaTouch 2.1, first power-on)
+
+Flash the standalone test firmware before the app, then open the serial monitor (115200, USB) and keep the log:
+
+```bash
+pio run -e matouch21-bringup --target upload && pio device monitor -b 115200
+```
+
+Rotate to change screens; button actions are shown at the bottom of each one. Pass criteria:
+
+| # | Screen | Pass |
+|---|---|---|
+| 1 | INFO | 16 MB flash, ~8192 KB PSRAM, Arduino 2.0.17, reset POWERON |
+| 2 | COLOUR | Bars read RED/GREEN/BLUE/WHITE in those colours (R↔B swap = RGB pin order); TOP/RIGHT/BOTTOM/LEFT match the board; click-through fills are uniform |
+| 3 | TOUCH | Red dot sits under the finger; after tapping TOP→RIGHT→BOTTOM→LEFT it shows *PASS*, otherwise set the reported `TOUCH_SWAP_XY/MIRROR_X/MIRROR_Y` in `BoardConfig.h` |
+| 4 | INPUT | 4 raw counts per detent, CW = positive; click/double/long all logged; click then rotate ramps backlight 0→100% smoothly |
+| 5 | I2C | `0x15 CST826 touch` FOUND |
+| 6 | PINS | **Transceiver disconnected.** Meter/LED on the UART connector: 1 Hz pin = GPIO43 = CAN TX, 4 Hz = GPIO44 = CAN RX. Also watch GPIO43 through a reset — the ESP32-S3 ROM prints its boot banner on UART0 TX (GPIO43); if it does, that traffic reaches the CAN bus on every boot |
+| 7 | CAN | Wired to the bus at 500k: RX count rises, state RUNNING, TEC/REC stay 0. Click sends ID 0x7A0. With no other node: double-click → SELF-TEST, click → RX increments |
+| 8 | STRESS | ~30 FPS (LVGL refresh cap); bar/arc edges clean with load OFF and ON. Tearing, or a panel shift/jitter at each 2 s NVS write, is the trigger to discuss core 3.x (RGB bounce buffers) |
+
+Paste the serial log back for review; the app (`-e matouch21`) goes on only after all eight pass.
+
 ## Release Process
 
 ```bash
