@@ -1,6 +1,6 @@
 #include "InputManager.h"
 #include "Config.h"
-#include <M5Unified.h>
+#include "Hardware.h"
 
 InputManager* InputManager::instance = nullptr;
 
@@ -81,13 +81,10 @@ void InputManager::update() {
 }
 
 void InputManager::checkTouch() {
-    // NOTE: M5.update() is called by Hardware::update() in the main loop.
-    // Do NOT call it here — M5Unified touch state is consumed on first call,
-    // so a second M5.update() would clear wasPressed()/wasReleased() before
-    // we can read them.
-    auto touch = M5.Touch.getDetail();
+    // Touch is sampled once per loop by Hardware::update(); see board layer.
+    TouchDetail touch = Hardware::getTouch();
     
-    if (touch.wasPressed()) {
+    if (touch.wasPressed) {
         touchPressed = true;
         lastTouchX = touch.x;
         lastTouchY = touch.y;
@@ -109,7 +106,7 @@ void InputManager::checkTouch() {
         Serial.printf("Touch press: %d, %d\n", touch.x, touch.y);
         #endif
     }
-    else if (touch.wasReleased()) {
+    else if (touch.wasReleased) {
         InputEvent event;
         event.type = INPUT_TOUCH_RELEASE;
         event.touchX = touch.x;

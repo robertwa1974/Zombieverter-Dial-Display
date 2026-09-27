@@ -2,10 +2,12 @@
 #define UIMANAGER_LVGL_H
 
 #include <Arduino.h>
+#include "Config.h"
+#if defined(BOARD_M5DIAL)
 #include <M5Unified.h>
+#endif
 #include <lvgl.h>
 #include "CANData.h"
-#include "Config.h"
 
 // Forward declarations
 class Immobilizer;

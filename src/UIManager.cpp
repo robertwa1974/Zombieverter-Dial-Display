@@ -5,7 +5,7 @@
 #include <LittleFS.h>
 #include <esp_heap_caps.h>
 #include "FaultLogger.h"
-#include <M5GFX.h>
+#include "Hardware.h"
 
 // Static instance for callbacks
 extern bool wifiMode;
@@ -35,9 +35,9 @@ bool UIManager::init(CANDataManager* canMgr, Immobilizer* immob) {
     
     lv_init();
     
-    size_t buffer_size = SCREEN_WIDTH * 40;
-    buf1 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    buf2 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    size_t buffer_size = SCREEN_WIDTH * DISPLAY_DRAW_BUF_LINES;
+    buf1 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), DISPLAY_DRAW_BUF_CAPS);
+    buf2 = (lv_color_t*)heap_caps_malloc(buffer_size * sizeof(lv_color_t), DISPLAY_DRAW_BUF_CAPS);
     
     if (!buf1 || !buf2) {
         Serial.println("ERROR: Failed to allocate LVGL buffers!");
@@ -124,10 +124,7 @@ void UIManager::resetWifiScreen() {
 void UIManager::lvgl_flush_cb(lv_disp_drv_t* disp, const lv_area_t* area, lv_color_t* color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
-    M5.Display.startWrite();
-    M5.Display.setAddrWindow(area->x1, area->y1, w, h);
-    M5.Display.pushPixels((uint16_t*)&color_p->full, w * h, true);
-    M5.Display.endWrite();
+    Hardware::flushDisplay(area->x1, area->y1, w, h, (uint16_t*)&color_p->full);
     lv_disp_flush_ready(disp);
 }
 

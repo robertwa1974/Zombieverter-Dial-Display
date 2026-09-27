@@ -1,4 +1,8 @@
+// M5Stack Dial board layer — M5Unified owns display, touch and button scan.
 #include "Hardware.h"
+
+#if defined(BOARD_M5DIAL)
+
 #include <esp_sleep.h>
 
 uint8_t Hardware::currentBrightness = DEFAULT_BRIGHTNESS;
@@ -79,3 +83,26 @@ void Hardware::setLEDColor(uint8_t r, uint8_t g, uint8_t b) {
     // For now, just use simple on/off
     setLED(r > 0 || g > 0 || b > 0);
 }
+
+void Hardware::flushDisplay(int32_t x, int32_t y, uint32_t w, uint32_t h, uint16_t* pixels) {
+    M5.Display.startWrite();
+    M5.Display.setAddrWindow(x, y, w, h);
+    M5.Display.pushPixels(pixels, w * h, true);
+    M5.Display.endWrite();
+}
+
+TouchDetail Hardware::getTouch() {
+    // NOTE: M5.update() is called by Hardware::update() in the main loop.
+    // Do NOT call it here — M5Unified touch state is consumed on first call,
+    // so a second M5.update() would clear wasPressed()/wasReleased() before
+    // we can read them.
+    auto touch = M5.Touch.getDetail();
+    TouchDetail detail;
+    detail.wasPressed  = touch.wasPressed();
+    detail.wasReleased = touch.wasReleased();
+    detail.x = touch.x;
+    detail.y = touch.y;
+    return detail;
+}
+
+#endif // BOARD_M5DIAL
