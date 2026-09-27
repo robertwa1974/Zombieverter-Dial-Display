@@ -43,6 +43,9 @@ pio run -e matouch21 --target uploadfs # web UI (partitions_16MB.csv)
   The Dial-only PSRAM rule above does not apply to `matouch21`, which needs `qio_opi` + `-DBOARD_HAS_PSRAM`.
 - Board code lives in `src/board/` (`Hardware_M5Dial.cpp`, `Hardware_MaTouch21.cpp`, `CST826.*`).
 - UI is authored at 240×240: wrap pixel values in `S()` (scales by `SCREEN_WIDTH / 240`, `include/UIScale.h`) and use `UI_FONT_nn` (per-board font row in `BoardConfig.h`).
+- MaTouch 64/80 px fonts (`src/fonts/`) are generated and committed, so builds don't need Node. They
+  hold only the glyphs their labels use: when you change text in a `UI_FONT_32`/`UI_FONT_40` label, add
+  its characters in `tools/gen_matouch_fonts.py` and rerun it (needs Node.js). Missing glyphs render blank.
 - `HAS_RFID=0` on MaTouch: RFID compiled out, fob menu items hidden, PIN + BLE unlock only.
 - CAN is TWAI TX 43 / RX 44 (UART connector); GPIO 1/2/21/46 are LCD pins on this board.
 

@@ -47,14 +47,17 @@ def main():
     for name, size, glyphs in FONTS:
         symbols = "".join(sorted(set(glyphs)))
         out = os.path.join(OUT_DIR, name + ".c")
+        # Repo-relative paths: lv_font_conv records its command line in the
+        # generated file, so absolute paths would leak into committed output
+        rel = lambda p: os.path.relpath(p, ROOT).replace(os.sep, "/")
         cmd = [npx or "npx", "--yes", LV_FONT_CONV,
                "--no-compress", "--no-prefilter", "--bpp", "4", "--size", str(size),
-               "--font", TTF, "--symbols", symbols,
-               "--format", "lvgl", "--force-fast-kern-format", "-o", out]
+               "--font", rel(TTF), "--symbols", symbols,
+               "--format", "lvgl", "--force-fast-kern-format", "-o", rel(out)]
         print(" ".join('"%s"' % c if " " in c else c for c in cmd))
         if dry:
             continue
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, cwd=ROOT)
 
         # Compile for the MaTouch only; the Dial keeps LVGL's built-in fonts
         with open(out, encoding="utf-8") as f:
