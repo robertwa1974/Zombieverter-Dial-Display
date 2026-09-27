@@ -4,37 +4,11 @@
 #include <Arduino.h>
 
 // ============================================
-// M5Stack Dial Hardware Configuration
+// Board Hardware Configuration
 // ============================================
-
-// Display Configuration
-#define SCREEN_WIDTH        240
-#define SCREEN_HEIGHT       240
-#define SCREEN_IS_ROUND     true
-#define SCREEN_CENTER_X     120
-#define SCREEN_CENTER_Y     120
-#define SCREEN_RADIUS       120
-
-// Encoder Pins (Built-in on M5Stack Dial)
-#define ENCODER_PIN_A       41  // Swapped with PIN_B
-#define ENCODER_PIN_B       40  // Swapped with PIN_A
-#define ENCODER_BUTTON      42
-
-// Touch Screen (FT6336U)
-#define TOUCH_SDA           11
-#define TOUCH_SCL           12
-#define TOUCH_INT           14
-#define TOUCH_RST           -1
-
-// CAN Bus (External Unit - Grove Port)
-// USE PORT B (GREY CONNECTOR) - This is the one that works!
-// Port B uses GPIO 2 and GPIO 1 (confirmed by testing)
-#define CAN_TX_PIN          2   // Port B (Grey) - Pin 1 (Yellow wire)
-#define CAN_RX_PIN          1   // Port B (Grey) - Pin 2 (White wire)
-
-// Power & LED
-#define POWER_HOLD_PIN      46
-#define LED_PIN             21
+// Pins, resolution and feature flags (HAS_RFID etc.) live in BoardConfig.h,
+// selected by the BOARD_* build flag (default: BOARD_M5DIAL).
+#include "BoardConfig.h"
 
 // ============================================
 // WiFi Configuration
