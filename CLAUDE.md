@@ -42,7 +42,7 @@ pio run -e matouch21 --target uploadfs # web UI (partitions_16MB.csv)
 - Board selected by `-DBOARD_MATOUCH21`; no flag = `BOARD_M5DIAL` (see `include/BoardConfig.h`).
   The Dial-only PSRAM rule above does not apply to `matouch21`, which needs `qio_opi` + `-DBOARD_HAS_PSRAM`.
 - Board code lives in `src/board/` (`Hardware_M5Dial.cpp`, `Hardware_MaTouch21.cpp`, `CST826.*`).
-- UI is authored at 240×240: wrap pixel values in `S()` and use `UI_FONT_nn` (`include/UIScale.h`).
+- UI is authored at 240×240: wrap pixel values in `S()` (scales by `SCREEN_WIDTH / 240`, `include/UIScale.h`) and use `UI_FONT_nn` (per-board font row in `BoardConfig.h`).
 - `HAS_RFID=0` on MaTouch: RFID compiled out, fob menu items hidden, PIN + BLE unlock only.
 - CAN is TWAI TX 43 / RX 44 (UART connector); GPIO 1/2/21/46 are LCD pins on this board.
 
@@ -68,6 +68,32 @@ Rotate to change screens; button actions are shown at the bottom of each one. Pa
 | 8 | STRESS | ~30 FPS (LVGL refresh cap); bar/arc edges clean with load OFF and ON. Tearing, or a panel shift/jitter at each 2 s NVS write, is the trigger to discuss core 3.x (RGB bounce buffers) |
 
 Paste the serial log back for review; the app (`-e matouch21`) goes on only after all eight pass.
+
+### Adding a new board
+
+The Dial layout (240 px) scales to any round panel: `S(x) = x * SCREEN_WIDTH / 240`, rounded.
+To add a board (e.g. 360×360, 466×466, 800×800):
+
+1. **`include/BoardConfig.h`** — add `BOARD_<NAME>` to the selection checks and a new
+   `#elif defined(BOARD_<NAME>)` section: `BOARD_NAME`, `SCREEN_*`, `DISPLAY_DRAW_BUF_LINES/CAPS`,
+   pins (`ENCODER_*`, `TOUCH_*`, `CAN_TX_PIN/CAN_RX_PIN`, panel pins), the `HAS_*` flags and a
+   **font row** (`UI_FONT_12..UI_FONT_40`; the comment block at the top of the file shows how).
+   - `HAS_RFID` — reader fitted (else RFID compiled out, fob menu hidden)
+   - `HAS_POWER_HOLD` / `HAS_LED` / `HAS_BATTERY` — hardware present
+2. **`src/board/Hardware_<Name>.cpp`** — the whole `Hardware` API inside `#if defined(BOARD_<NAME>)`:
+   init, update (touch sampling), backlight, `flushDisplay`, `getTouch`, power/LED/battery stubs.
+   Copy `Hardware_MaTouch21.cpp` as the template.
+3. **Fonts** — built-in Montserrat is 8..48 px (enable sizes in `lv_conf.h`); larger sizes via
+   `tools/gen_matouch_fonts.py` (add the board's sizes) + `UI_FONTS_EXTRA_DECLARE` in the font row.
+4. **`platformio.ini`** — `[env:<name>]` extending `env:m5stack-dial`, adding `-DBOARD_<NAME>`, its
+   own `lib_deps` (display driver instead of M5Unified/M5GFX), flash/PSRAM settings and partitions.
+5. **Bring-up env** — `[env:<name>-bringup]` like `matouch21-bringup`, with a `build_src_filter`
+   including `bringup/` and the new board's `src/board/` files. `Bringup.cpp` currently accepts only
+   `BOARD_MATOUCH21`: widen its `#error` guard and give the new board layer `i2cBus()` and
+   `getTouchRaw()` (plus `TOUCH_SWAP_XY/MIRROR_X/MIRROR_Y`). Run the bring-up checklist first.
+
+Not yet supported — needs the Arduino core 3.x migration first: touch-only boards without an
+encoder (a future `HAS_ENCODER=0`) and ESP32-P4 targets.
 
 ## Release Process
 
