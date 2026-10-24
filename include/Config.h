@@ -71,6 +71,12 @@
 #define RX_QUEUE_SIZE       32
 #define PARAM_UPDATE_INTERVAL_MS  100
 
+// Motor speed (spot 2016) is the input to the Gear/Motor change interlock, so it
+// is polled on its own timer; the round-robin above takes ~25 s per pass.
+#define SPEED_POLL_INTERVAL_MS    200
+#define SPEED_STALE_MS            1000   // older than this = unknown speed, changes refused
+#define GEAR_CHANGE_MAX_RPM       50     // Gear/Motor edits refused above this |rpm|
+
 // Debug
 #define DEBUG_SERIAL        false
 #define DEBUG_CAN           false  // Enable to see CAN messages

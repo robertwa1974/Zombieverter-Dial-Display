@@ -21,13 +21,20 @@ public:
     void begin();
 
     // Call every second with current power (W) and speed (RPM)
-    // wheelCircumference_m: wheel circumference in metres (set once at init)
-    void update(float powerW, int speedRPM);
+    // rangeRatio: gearbox reduction between motor and propshaft (GS450H/LS600h
+    // L110 range gear: LOW 3.9, HIGH 1.9; 1.0 when the motor drives the axle)
+    void update(float powerW, int speedRPM, float rangeRatio = 1.0f);
 
     // Set motor-to-wheel ratio and wheel circumference for speed->distance conversion
-    // finalDriveRatio: e.g. 4.1 for 4.1:1 final drive
+    // finalDriveRatio: axle ratio after any range gear, e.g. 4.1 for 4.1:1
     // wheelCircumference_m: e.g. 1.88 for 205/55R16
     void setDriveParams(float finalDriveRatio, float wheelCircumference_m);
+
+    // Range gear ratios (GS450H/LS600h L110: LOW 3.9, HIGH 1.9), applied by the
+    // caller via update()'s rangeRatio when the VCU drives a GS450H inverter
+    void setGearRatios(float low, float high) { _gearLow = low; _gearHigh = high; }
+    float getGearLow()  const { return _gearLow; }
+    float getGearHigh() const { return _gearHigh; }
 
     // Returns instantaneous Wh/km from rolling window (NAN if insufficient data)
     float getWhPerKm() const;
@@ -49,6 +56,7 @@ public:
 private:
     EfficiencyTracker() :
         _finalDrive(4.1f), _wheelCirc(1.88f),
+        _gearLow(3.9f), _gearHigh(1.9f),
         _head(0), _sampleCount(0),
         _sessionEnergyWh(0), _sessionDistanceKm(0),
         _chargeEnergyWh(0), _charging(false),
@@ -59,6 +67,8 @@ private:
 
     float    _finalDrive;
     float    _wheelCirc;
+    float    _gearLow;
+    float    _gearHigh;
 
     // Rolling window — one entry per second
     float    _powerW[EFFICIENCY_SAMPLES];    // W

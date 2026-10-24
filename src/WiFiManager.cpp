@@ -797,6 +797,14 @@ String WiFiManager::cmdSet(const String& name, const String& value) {
         return "0\n";
     }
 
+    // Same interlock as the dial: no Gear (27) / MotActive (129) change while
+    // the motor turns or speed is unknown
+    if ((p->id == 27 || p->id == 129) && !can->isStoppedForGearChange()) {
+        Serial.printf("[WiFi] Set %s refused: %s\n", name.c_str(),
+                      can->isSpeedFresh() ? "motor turning" : "no speed data");
+        return "0\n";
+    }
+
     double dval = value.toDouble();
     uint32_t raw = (uint32_t)(int32_t)(dval * 32.0);
 
@@ -1135,30 +1143,33 @@ void WiFiManager::handleFaultLogDelete(AsyncWebServerRequest* request) {
 
 // ---------------------------------------------------------------------------
 // handleDialSettingsGet — GET /dial-settings
-// Returns M5Dial-local config (finalDrive, wheelCirc) as JSON
+// Returns M5Dial-local config (finalDrive, wheelCirc, gearLow/High, ...) as JSON
 // ---------------------------------------------------------------------------
 void WiFiManager::handleDialSettingsGet(AsyncWebServerRequest* request) {
     Preferences prefs;
     prefs.begin("dialsettings", true);
     float    finalDrive  = prefs.getFloat("finalDrive",  4.10f);
     float    wheelCirc   = prefs.getFloat("wheelCirc",   1.88f);
+    float    gearLow     = prefs.getFloat("gearLow",     3.90f);
+    float    gearHigh    = prefs.getFloat("gearHigh",    1.90f);
     uint16_t screenMask   = prefs.getUShort("screenMask",  0xFFFF);
-    bool     immobEnabled = prefs.getBool("immobEnabled",  true);
+    bool     immobEnabled = prefs.getBool("immobEnabled",  false);
     uint16_t immobWriteId = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
     uint16_t immobReadId  = prefs.getUShort("immobReadId",  VCU_SPOT_DRIVE_INHIBITED);
     bool     fetchOnBoot  = prefs.getBool("fetchOnBoot",  false);
     prefs.end();
 
     AsyncResponseStream *response = request->beginResponseStream("application/json");
-    response->printf("{\"finalDrive\":%.2f,\"wheelCirc\":%.2f,\"screenMask\":%u,\"immobEnabled\":%s,\"immobWriteId\":%u,\"immobReadId\":%u,\"fetchOnBoot\":%s}",
-                     finalDrive, wheelCirc, screenMask, immobEnabled ? "true" : "false", immobWriteId, immobReadId, fetchOnBoot ? "true" : "false");
+    response->printf("{\"finalDrive\":%.2f,\"wheelCirc\":%.3f,\"gearLow\":%.2f,\"gearHigh\":%.2f,\"screenMask\":%u,\"immobEnabled\":%s,\"immobWriteId\":%u,\"immobReadId\":%u,\"fetchOnBoot\":%s}",
+                     finalDrive, wheelCirc, gearLow, gearHigh, screenMask, immobEnabled ? "true" : "false", immobWriteId, immobReadId, fetchOnBoot ? "true" : "false");
     response->addHeader("Access-Control-Allow-Origin", "*");
     request->send(response);
 }
 
 // ---------------------------------------------------------------------------
 // handleDialSettingsPost — POST /dial-settings
-// Saves finalDrive and/or wheelCirc to NVS and updates EfficiencyTracker
+// Saves finalDrive, wheelCirc, gearLow and/or gearHigh to NVS and updates
+// EfficiencyTracker
 // ---------------------------------------------------------------------------
 void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
                                           uint8_t* data, size_t len,
@@ -1170,8 +1181,10 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
     prefs.begin("dialsettings", false);
     float    finalDrive   = prefs.getFloat("finalDrive",   4.10f);
     float    wheelCirc    = prefs.getFloat("wheelCirc",    1.88f);
+    float    gearLow      = prefs.getFloat("gearLow",      3.90f);
+    float    gearHigh     = prefs.getFloat("gearHigh",     1.90f);
     uint16_t screenMask   = prefs.getUShort("screenMask",  0xFFFF);
-    bool     immobEnabled = prefs.getBool("immobEnabled",  true);
+    bool     immobEnabled = prefs.getBool("immobEnabled",  false);
 
     int idx = body.indexOf("\"finalDrive\"");
     if (idx >= 0) {
@@ -1189,6 +1202,24 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
         if (comma < 0) comma = body.indexOf('}', colon);
         float v = body.substring(colon + 1, comma).toFloat();
         if (v > 0.5f && v < 4.0f) { wheelCirc = v; prefs.putFloat("wheelCirc", v); }
+    }
+
+    idx = body.indexOf("\"gearLow\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        float v = body.substring(colon + 1, comma).toFloat();
+        if (v >= 0.5f && v <= 10.0f) { gearLow = v; prefs.putFloat("gearLow", v); }
+    }
+
+    idx = body.indexOf("\"gearHigh\"");
+    if (idx >= 0) {
+        int colon = body.indexOf(':', idx);
+        int comma = body.indexOf(',', colon);
+        if (comma < 0) comma = body.indexOf('}', colon);
+        float v = body.substring(colon + 1, comma).toFloat();
+        if (v >= 0.5f && v <= 10.0f) { gearHigh = v; prefs.putFloat("gearHigh", v); }
     }
 
     idx = body.indexOf("\"screenMask\"");
@@ -1260,8 +1291,9 @@ void WiFiManager::handleDialSettingsPost(AsyncWebServerRequest* request,
 
     prefs.end();
     EfficiencyTracker::getInstance().setDriveParams(finalDrive, wheelCirc);
-    Serial.printf("[WIFI] dial-settings updated: finalDrive=%.2f wheelCirc=%.2f\n",
-                  finalDrive, wheelCirc);
+    EfficiencyTracker::getInstance().setGearRatios(gearLow, gearHigh);
+    Serial.printf("[WIFI] dial-settings updated: finalDrive=%.2f wheelCirc=%.3f gearLow=%.2f gearHigh=%.2f\n",
+                  finalDrive, wheelCirc, gearLow, gearHigh);
 }
 
 // ---------------------------------------------------------------------------

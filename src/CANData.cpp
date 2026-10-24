@@ -30,6 +30,7 @@ void CANDataManager::sdoResultCallback(const SDOResult& result) {
     } else {
         instance->updateParameterBySDOId(result.paramId, result.value / 32);
     }
+    if (result.paramId == SPEED_PARAM_ID) instance->lastSpeedSdoMs = millis();
     #if DEBUG_CAN
     Serial.printf("[SDO CB] Read param %d raw=%d scaled=%d\n",
                   result.paramId, result.value, result.value / 32);
@@ -395,26 +396,47 @@ void CANDataManager::update() {
 // ============================================================================
 
 void CANDataManager::requestParameter(uint16_t paramId) {
-    // Skip SDO polling for params that come from CAN broadcasts.
-    // These have canid in params.json and are updated by handleGenericMessage.
-    // Polling them via SDO returns ×32 encoded values which would corrupt
-    // the correctly-scaled broadcast values used by the dial display.
+    // Skip SDO polling for params that handleGenericMessage updates from CAN
+    // broadcasts. They freeze if that broadcast is absent (e.g. no IVT-S shunt).
+    // speed (2016) is polled separately by pollSpeed(). U12V (2070) is not
+    // skipped: the VCU maps it to 0x210, which nothing here decodes.
     static const uint16_t broadcastIds[] = {
-        2006,  // udc       (0x522)
-        2012,  // idc       (0x411)
+        2006,  // udc       (IVT-S 0x522, mV)
+        2012,  // idc       (IVT-S 0x521, mA)
         2015,  // SOC       (0x355)
-        2016,  // speed     (0x257)
+        2016,  // speed     (SDO via pollSpeed, 0x257 fallback)
         2028,  // tmphs     (0x126)
         2029,  // tmpm      (0x356)
         // BMS_Vmin (2084), BMS_Vmax (2085), BMS_Tmin (2086), BMS_Tmax (2087)
         // are NOT broadcast - they come via SDO polling only
-        2070,  // U12V      (0x528)
         0
     };
     for (int i = 0; broadcastIds[i] != 0; i++) {
         if (paramId == broadcastIds[i]) return;
     }
     sdoManager.requestRead(paramId);
+}
+
+// ============================================================================
+// Motor speed interlock
+// ============================================================================
+
+void CANDataManager::pollSpeed() {
+    if (millis() - lastSpeedRequestMs < SPEED_POLL_INTERVAL_MS) return;
+    lastSpeedRequestMs = millis();
+    sdoManager.requestRead(SPEED_PARAM_ID);
+}
+
+bool CANDataManager::isSpeedFresh() {
+    if (!getParameter(SPEED_PARAM_ID)) return false;
+    uint32_t now = millis();
+    return (lastSpeedSdoMs       != 0 && now - lastSpeedSdoMs       <= SPEED_STALE_MS) ||
+           (lastSpeedBroadcastMs != 0 && now - lastSpeedBroadcastMs <= SPEED_STALE_MS);
+}
+
+bool CANDataManager::isStoppedForGearChange() {
+    if (!isSpeedFresh()) return false;
+    return abs(getParameter(SPEED_PARAM_ID)->getValueAsInt()) <= GEAR_CHANGE_MAX_RPM;
 }
 
 // ============================================================================
@@ -594,6 +616,8 @@ void CANDataManager::processReceivedMessage(CANMessage& msg) {
 
 // ============================================================================
 // handleSDOResponse — legacy fallback, also applies ÷32 scaling
+// Unreachable while 0x580 + CAN_NODE_ID == SDO_RX_ID: update() hands those
+// frames to SDOManager. Only handles ids < 256 (uint8 subindex, index 0x2100).
 // ============================================================================
 
 void CANDataManager::handleSDOResponse(CANMessage& msg) {
@@ -731,10 +755,16 @@ void CANDataManager::handleGenericMessage(CANMessage& msg) {
         return;
     }
 
+    // VCU CAN map: speed on 0x257 bits 0-15, gain 0.09, i.e. raw = rpm * 0.09
+    // (~11 rpm resolution). Fallback only — SDO speed wins while it is fresh.
     if (msg.id == 0x257 && msg.length >= 2) {
+        if (millis() - lastSpeedSdoMs <= SPEED_STALE_MS) return;
         int16_t raw = msg.data[0] | (msg.data[1] << 8);
-        CANParameter* p = getParameterByName("speed");
-        if (p) p->setValue((int32_t)(raw * 0.09f));
+        CANParameter* p = getParameter(SPEED_PARAM_ID);
+        if (p) {
+            p->setValue((int32_t)lroundf(raw / 0.09f));
+            lastSpeedBroadcastMs = millis();
+        }
         return;
     }
 

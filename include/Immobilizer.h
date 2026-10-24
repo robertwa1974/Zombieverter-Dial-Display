@@ -168,7 +168,7 @@ public:
 private:
     SDOManager* sdoManager;
     ImmobMode   mode;
-    bool        enabled        = true;   // false = bypass all locking
+    bool        enabled        = false;  // false = bypass all locking (default: off until enabled in Settings)
     uint16_t    inhibitWriteId = VCU_PARAM_DRIVE_INHIBIT;   // configurable via web UI
     uint16_t    inhibitReadId  = VCU_SPOT_DRIVE_INHIBITED;  // configurable via web UI
 

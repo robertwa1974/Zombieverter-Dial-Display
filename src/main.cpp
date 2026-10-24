@@ -107,6 +107,17 @@ void onSDOResult(const SDOResult& result) {
     canManager.onSDOResult(result);
 }
 
+// Safety interlock for Gear/Motor changes: refuse while the motor turns, and
+// also when speed is unknown (no fresh SDO or 0x257 value). Shows the warning.
+static bool driveChangeBlocked(const char* action) {
+    if (canManager.isStoppedForGearChange()) return false;
+    static char msg[64];
+    snprintf(msg, sizeof(msg), "%s\nStop before\n%s",
+             canManager.isSpeedFresh() ? "Vehicle moving" : "No speed data", action);
+    uiManager.showWarning(msg);
+    return true;
+}
+
 // ============================================================================
 // Input callbacks
 // ============================================================================
@@ -153,11 +164,7 @@ void onEncoderRotate(int32_t delta) {
             uiManager.setScreen(dest);
             return;
         }
-        // Safety: block gear change while moving — use cached pointer
-        if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
-            uiManager.showWarning("Vehicle moving\nStop before\nchanging gear");
-            return;
-        }
+        if (driveChangeBlocked("changing gear")) return;
         CANParameter* gear = canManager.getParameter(27);
         if (gear) {
             int32_t newGear = gear->getValueAsInt();
@@ -170,11 +177,7 @@ void onEncoderRotate(int32_t delta) {
             uiManager.setScreen(dest);
             return;
         }
-        // Safety: block motor mode change while moving — use cached pointer
-        if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
-            uiManager.showWarning("Vehicle moving\nStop before\nchanging motor");
-            return;
-        }
+        if (driveChangeBlocked("changing motor")) return;
         CANParameter* motor = canManager.getParameter(129);
         if (motor) {
             int32_t newMotor = motor->getValueAsInt();
@@ -277,10 +280,7 @@ void onButtonClick() {
         } else {
             // Safety: block entering edit mode on Gear/Motor while moving
             if (currentScreen == SCREEN_GEAR || currentScreen == SCREEN_MOTOR) {
-                if (g_pSpeed && abs(g_pSpeed->getValueAsInt()) > 50) {
-                    uiManager.showWarning("Vehicle moving\nStop before\nediting");
-                    return;
-                }
+                if (driveChangeBlocked("editing")) return;
             }
             uiManager.toggleEditMode();  // enter edit mode
         }
@@ -408,7 +408,7 @@ void onTouchTap(uint16_t x, uint16_t y) {
     if (currentScreen == SCREEN_GEAR) {
         if (y >= 170 && y <= 236) {
             int option = (y - 170) / 22;
-            if (option >= 0 && option <= 3)
+            if (option >= 0 && option <= 3 && !driveChangeBlocked("changing gear"))
                 canManager.setParameter(27, option);
         }
     }
@@ -416,7 +416,7 @@ void onTouchTap(uint16_t x, uint16_t y) {
     if (currentScreen == SCREEN_MOTOR) {
         if (y >= 170 && y <= 236) {
             int option = (y - 170) / 22;
-            if (option >= 0 && option <= 3)
+            if (option >= 0 && option <= 3 && !driveChangeBlocked("changing motor"))
                 canManager.setParameter(129, option);
         }
     }
@@ -437,6 +437,7 @@ void onTouchTap(uint16_t x, uint16_t y) {
 // Shared SDO poll helper — identical logic used in both WiFi and normal mode
 // ============================================================================
 void pollNextSDOParam() {
+    canManager.pollSpeed();
     if (millis() - lastParamRequestTime > PARAM_UPDATE_INTERVAL_MS) {
         lastParamRequestTime = millis();
         CANParameter* param = canManager.getParameterByIndex(currentParamIndex);
@@ -643,7 +644,7 @@ void setup() {
         Preferences prefs;
         prefs.begin("dialsettings", true);
         uint16_t screenMask   = prefs.getUShort("screenMask",   0xFFFF);
-        bool     immobEnabled = prefs.getBool("immobEnabled",   true);
+        bool     immobEnabled = prefs.getBool("immobEnabled",   false);
         uint16_t immobWriteId = prefs.getUShort("immobWriteId", VCU_PARAM_DRIVE_INHIBIT);
         uint16_t immobReadId  = prefs.getUShort("immobReadId",  VCU_SPOT_DRIVE_INHIBITED);
         prefs.end();
@@ -690,11 +691,14 @@ void setup() {
         prefs.begin("dialsettings", true);
         float finalDrive = prefs.getFloat("finalDrive", 4.10f);
         float wheelCirc  = prefs.getFloat("wheelCirc",  1.88f);
+        float gearLow    = prefs.getFloat("gearLow",    3.90f);
+        float gearHigh   = prefs.getFloat("gearHigh",   1.90f);
         prefs.end();
         EfficiencyTracker::getInstance().begin();
         EfficiencyTracker::getInstance().setDriveParams(finalDrive, wheelCirc);
-        Serial.printf("[Main] EfficiencyTracker: finalDrive=%.2f wheelCirc=%.2f\n",
-                      finalDrive, wheelCirc);
+        EfficiencyTracker::getInstance().setGearRatios(gearLow, gearHigh);
+        Serial.printf("[Main] EfficiencyTracker: finalDrive=%.2f wheelCirc=%.2f gearLow=%.2f gearHigh=%.2f\n",
+                      finalDrive, wheelCirc, gearLow, gearHigh);
     }
 
     // Register GVRET bridge as CAN frame observer — pushes every frame to
@@ -895,7 +899,19 @@ void loop() {
             lastEffUpdate = millis();
             float powerW   = g_pPwr   ? (float)g_pPwr->getValueAsInt() * 1000.0f : 0.0f;
             int   speedRPM = g_pSpeed ? g_pSpeed->getValueAsInt() : 0;
-            EfficiencyTracker::getInstance().update(powerW, speedRPM);
+            // GS450H inverter (Inverter=2) drives MG2 through the L110 range
+            // gear: GearFB (spot 2047) 1 = HIGH, otherwise LOW (default 1.9 /
+            // 3.9:1, ORNL/TM-2008/185; set on the web Settings page).
+            // GearFB comes from the ~25 s round-robin poll.
+            EfficiencyTracker& eff = EfficiencyTracker::getInstance();
+            float rangeRatio = 1.0f;
+            CANParameter* inv = canManager.getParameter(5);
+            if (inv && inv->getValueAsInt() == 2) {
+                CANParameter* gearFB = canManager.getParameter(2047);
+                rangeRatio = (gearFB && gearFB->getValueAsInt() == 1) ? eff.getGearHigh()
+                                                                       : eff.getGearLow();
+            }
+            eff.update(powerW, speedRPM, rangeRatio);
         }
     }
 

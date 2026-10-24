@@ -78,6 +78,13 @@ public:
     uint32_t getSDOFailureCount()  { return sdoManager.getFailureCount(); }
     uint32_t getSDOTimeoutCount()  { return sdoManager.getTimeoutCount(); }
 
+    // Motor speed interlock. Speed is read via SDO (exact rpm); the 0x257
+    // broadcast is only used while the SDO value is stale.
+    static const uint16_t SPEED_PARAM_ID = 2016;
+    void pollSpeed();               // call from the poll loop once SDO is running
+    bool isSpeedFresh();            // speed updated within SPEED_STALE_MS
+    bool isStoppedForGearChange();  // fresh and |rpm| <= GEAR_CHANGE_MAX_RPM
+
     // SDO manager access — used by Immobilizer to queue high-priority writes
     SDOManager* getSDOManager() { return &sdoManager; }
 
@@ -110,6 +117,11 @@ private:
 
     bool connected;
     uint32_t lastMessageTime;
+
+    // Live speed sources only — the params.json load also stamps lastUpdateTime
+    volatile uint32_t lastSpeedSdoMs = 0;   // written from the SDO task
+    uint32_t lastSpeedBroadcastMs = 0;
+    uint32_t lastSpeedRequestMs = 0;
 
     static const uint8_t MAX_BMS_CELLS = 96;
     uint16_t bmsCellVoltages[MAX_BMS_CELLS];

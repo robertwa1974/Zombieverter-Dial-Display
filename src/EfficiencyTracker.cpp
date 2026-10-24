@@ -19,17 +19,17 @@ void EfficiencyTracker::setDriveParams(float finalDriveRatio, float wheelCircumf
     _wheelCirc  = wheelCircumference_m;
 }
 
-void EfficiencyTracker::update(float powerW, int speedRPM) {
+void EfficiencyTracker::update(float powerW, int speedRPM, float rangeRatio) {
     uint32_t now = millis();
     float dt_s = (now - _lastUpdateMs) / 1000.0f;
     if (dt_s < 0.5f) return;  // called too fast — wait
     _lastUpdateMs = now;
 
     // Convert motor RPM to wheel speed (m/s)
-    // wheel_rps = motor_rps / finalDrive
+    // wheel_rps = motor_rps / (rangeRatio * finalDrive)
     // speed_ms  = wheel_rps * circumference
     float motorRPS  = speedRPM / 60.0f;
-    float speedMS   = (motorRPS / _finalDrive) * _wheelCirc;
+    float speedMS   = (motorRPS / (rangeRatio * _finalDrive)) * _wheelCirc;
     if (speedMS < 0) speedMS = 0;
 
     float distM   = speedMS * dt_s;

@@ -161,6 +161,52 @@
           </table>
         </div>
 
+        <!-- ── DRIVETRAIN (stored on the dial, not sent to VCU) ────────── -->
+        <div class="settings-section">
+          <h3>Drivetrain</h3>
+          <p style="color:#666; font-size:10pt; margin-bottom:12px;">
+            Used by the dial to turn motor rpm into distance for trip and efficiency (Wh/km) figures.
+            Stored on the dial, not sent to the VCU. The LOW/HIGH ratios apply only with a GS450H
+            inverter (two-speed range gear, selected from GearFB); otherwise set the overall motor-to-wheel
+            reduction as the final drive.
+          </p>
+          <table class="settings-table">
+            <thead><tr><th>Setting</th><th>Current</th><th>New Value</th><th>Unit</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr data-local="finalDrive" data-min="1" data-max="20">
+                <td>Final drive</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="1" max="20" step="0.01" placeholder="e.g. 3.54"></td>
+                <td>:1</td>
+                <td>Axle / differential ratio</td>
+              </tr>
+              <tr data-local="gearLow" data-min="0.5" data-max="10">
+                <td>Gear ratio LOW</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0.5" max="10" step="0.01" placeholder="e.g. 3.90"></td>
+                <td>:1</td>
+                <td>Range gear in LOW (GS450H/LS600h L110: 3.90)</td>
+              </tr>
+              <tr data-local="gearHigh" data-min="0.5" data-max="10">
+                <td>Gear ratio HIGH</td>
+                <td class="current-val">—</td>
+                <td><input type="number" min="0.5" max="10" step="0.01" placeholder="e.g. 1.90"></td>
+                <td>:1</td>
+                <td>Range gear in HIGH (GS450H/LS600h L110: 1.90)</td>
+              </tr>
+              <tr data-local="wheelCirc" data-min="0.5" data-max="4">
+                <td>Wheel circumference</td>
+                <td class="current-val">—</td>
+                <td><input type="number" id="wheelCircInput" min="0.5" max="4" step="0.001" placeholder="e.g. 2.474"></td>
+                <td>m</td>
+                <td>Rolling circumference of the driven wheel.
+                  From tire diameter: <input type="number" id="tireDiaIn" min="10" max="50" step="0.1"
+                  placeholder="in" style="width:60px;" oninput="tireDiaToCirc()"> in</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <!-- ── SPLASH LOGO ─────────────────────────────────────────────── -->
         <div class="settings-section">
           <h3>Splash Screen Logo</h3>
@@ -535,6 +581,7 @@ function settingsInit() {
     });
   });
   loadCurrentValues();
+  loadLocalSettings();   // stored on the dial — doesn't need the VCU
   loadHealthSettings();
   checkLogoExists();
 }
@@ -558,8 +605,6 @@ function loadCurrentValues() {
         }
       }
     });
-    // Load local M5Dial settings
-    loadLocalSettings();
     showStatus('Values loaded — edit and click Apply Changes.', 'success');
     setTimeout(() => { document.getElementById('statusBar').style.display = 'none'; }, 3000);
   });
@@ -583,7 +628,7 @@ function loadLocalSettings() {
     })
     .catch(() => {
       // /dial-settings endpoint not yet implemented — show defaults
-      var defaults = { finalDrive: '4.10', wheelCirc: '1.88' };
+      var defaults = { finalDrive: '4.10', wheelCirc: '1.88', gearLow: '3.90', gearHigh: '1.90' };
       document.querySelectorAll('[data-local]').forEach(row => {
         var cell = row.querySelector('.current-val');
         cell.textContent = defaults[row.dataset.local] || '—';
@@ -604,6 +649,7 @@ function applyAll() {
                      max: parseFloat(row.dataset.max || '999999') });
     }
   });
+  var toValidate = toApply.slice();
 
   // Local M5Dial settings
   var localRows = document.querySelectorAll('[data-local]');
@@ -612,6 +658,9 @@ function applyAll() {
     var input = row.querySelector('input');
     if (input && input.value !== '') {
       localChanges[row.dataset.local] = parseFloat(input.value);
+      toValidate.push({ row: row, name: row.dataset.local, value: input.value,
+                        min: parseFloat(row.dataset.min || '-999999'),
+                        max: parseFloat(row.dataset.max || '999999') });
     }
   });
 
@@ -622,7 +671,7 @@ function applyAll() {
 
   // Validate ranges
   var errors = [];
-  toApply.forEach(item => {
+  toValidate.forEach(item => {
     var v = parseFloat(item.value);
     if (isNaN(v)) {
       errors.push(item.name + ': not a number');
@@ -648,11 +697,13 @@ function applyAll() {
     if (idx >= toApply.length) {
       // Apply local settings
       if (Object.keys(localChanges).length > 0) {
-        applyLocalSettings(localChanges);
+        applyLocalSettings(localChanges, toApply.length > 0);
       }
       document.getElementById('btnApply').disabled = false;
-      document.getElementById('saveReminder').style.display = 'block';
-      showStatus(appliedCount + ' VCU value(s) sent. Click Save to VCU Flash to persist.', 'success');
+      if (toApply.length > 0) {
+        document.getElementById('saveReminder').style.display = 'block';
+        showStatus(appliedCount + ' VCU value(s) sent. Click Save to VCU Flash to persist.', 'success');
+      }
       return;
     }
     var item = toApply[idx];
@@ -675,7 +726,8 @@ function applyAll() {
   sendNext(0);
 }
 
-function applyLocalSettings(changes) {
+// quiet: VCU values were sent too — keep their "Save to VCU Flash" status visible
+function applyLocalSettings(changes, quiet) {
   fetch('/dial-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -691,10 +743,22 @@ function applyLocalSettings(changes) {
           input.classList.add('applied');
         }
       });
+      if (!quiet) showStatus('Drivetrain settings saved on the dial.', 'success');
+    } else {
+      showStatus('Saving drivetrain settings failed (HTTP ' + r.status + ')', 'error');
     }
   }).catch(() => {
-    // Endpoint not yet implemented — silently ignore
+    showStatus('Saving drivetrain settings failed — dial not reachable', 'error');
   });
+}
+
+// Fill wheel circumference from a tire diameter in inches (C = π × d)
+function tireDiaToCirc() {
+  var d = parseFloat(document.getElementById('tireDiaIn').value);
+  var input = document.getElementById('wheelCircInput');
+  if (isNaN(d) || d <= 0) return;
+  input.value = (Math.PI * d * 0.0254).toFixed(3);
+  input.dispatchEvent(new Event('input'));
 }
 
 function saveToFlash() {

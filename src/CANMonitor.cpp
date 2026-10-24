@@ -13,7 +13,7 @@ const char* CANMonitor::knownIDName(uint32_t id) {
         case 0x355: return "SOC Broadcast";
         case 0x356: return "Motor Temp";
         case 0x126: return "Inverter Temp";
-        case 0x257: return "Speed";
+        case 0x257: return "Motor speed";
         case 0x521: return "IVT-S Current";
         case 0x522: return "IVT-S U1 (Battery V)";
         case 0x523: return "IVT-S U2";
@@ -296,8 +296,9 @@ void CANMonitor::decodeFrame(const CANFrame& f, char* outBuf, size_t outLen) {
         }
 
         case 0x257: {
-            int16_t spd = (int16_t)(f.data[0] | (f.data[1] << 8));
-            snprintf(outBuf, outLen, "Speed=%d rpm", spd);
+            // VCU CAN map gain 0.09: raw = rpm * 0.09
+            int16_t raw = (int16_t)(f.data[0] | (f.data[1] << 8));
+            snprintf(outBuf, outLen, "Speed=%ld rpm (raw %d)", lroundf(raw / 0.09f), raw);
             break;
         }
 
